@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+.venv/
+venv/
+
+# PyCharm
+.idea/
+
+# Logs / outputs
+logs/
+input/
+
+# Data / models
+*.tif
+*.tiff
+*.mrc
+*.map
+*.mat
+*.png
+*.n5
+*.zarr
+*.h5
+*.pt
+*.pth
+*.ckpt
+*.npy
+*.npz
+*.Identifier
+*.obj
+/janelia_cosem/depend_install.sh
