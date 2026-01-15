@@ -166,6 +166,12 @@ mask_dirs = {
     "exp": "main_patient_mitomask",
 }
 
+mask_dirs = {
+    "hela2": "label_hela2_mito_80",
+    "jurkat": "label_jurkat_mito_80",
+    "macrophage": "label_macrophage_mito_80",
+}
+
 dfs_3d, dfs_2d = [], []
 
 for group, mask_dir in mask_dirs.items():
@@ -212,7 +218,19 @@ features_2d = [
 ]
 #%%
 
-def plot_distributions(df, features, title_prefix):
+import numpy as np
+import matplotlib.pyplot as plt
+from itertools import combinations
+from scipy.stats import pearsonr
+
+
+from itertools import combinations
+from scipy.stats import pearsonr
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+def plot_distributions(df, features, title_prefix, show_legend=False):
     plt.rcParams.update({
         "font.size": 20,
         "axes.titlesize": 20,
@@ -220,45 +238,81 @@ def plot_distributions(df, features, title_prefix):
         "xtick.labelsize": 14,
         "ytick.labelsize": 14,
     })
-    plt.figure(figsize=(20, 10))
+
+    plt.figure(figsize=(14, 18))
+
+    groups = df["type"].unique()
 
     for i, feat in enumerate(features):
-        plt.subplot(2, 3, i + 1)
+        ax = plt.subplot(3, 2, i + 1)
 
-        for group in df["type"].unique():
-            data = df[df["type"] == group][feat].dropna()
+        # -------- collect data per group --------
+        data_dict = {}
+        for group in groups:
+            data = df[df["type"] == group][feat].dropna().values
 
             if feat in ["volume", "area", "elongation", "bbox_aspect_ratio"]:
                 data = np.log10(data + 1e-6)
 
-            plt.hist(
+            if len(data) > 0:
+                data_dict[group] = data
+
+        # -------- shared bins --------
+        all_data = np.concatenate(list(data_dict.values()))
+        bins = np.histogram_bin_edges(all_data, bins=50)
+
+        hist_dict = {}
+
+        # -------- plot histograms --------
+        for group, data in data_dict.items():
+            hist, _ = np.histogram(data, bins=bins, density=True)
+            hist_dict[group] = hist
+
+            ax.hist(
                 data,
-                bins=50,
-                alpha=0.6,
+                bins=bins,
+                alpha=0.4,
                 density=True,
                 label=group,
             )
 
-        plt.title(f"{title_prefix} {feat}")
-        plt.legend()
+        # -------- compute histogram correlations --------
+        corrs = []
+        for g1, g2 in combinations(hist_dict.keys(), 2):
+            if np.std(hist_dict[g1]) > 0 and np.std(hist_dict[g2]) > 0:
+                r, _ = pearsonr(hist_dict[g1], hist_dict[g2])
+                corrs.append(r)
+
+        # -------- annotate --------
+        if len(corrs) > 0:
+            text = (
+                f"mean r = {np.mean(corrs):.2f}\n"
+                f"min = {np.min(corrs):.2f}, max = {np.max(corrs):.2f}"
+            )
+            ax.text(
+                0.92, 0.92,
+                text,
+                transform=ax.transAxes,
+                ha="right",
+                va="top",
+                fontsize=20,
+                bbox=dict(boxstyle="round", fc="white", alpha=0.8),
+            )
+
+        ax.set_title(f"{title_prefix} {feat}")
+
+        # -------- legend switch --------
+        if show_legend:
+            ax.legend()
 
     plt.tight_layout()
-
     plt.show()
 
-def run_stats(df, features, label):
-    print(f"\nStatistical comparison ({label})")
-    for feat in features:
-        a = df[df["type"] == "control"][feat].dropna()
-        b = df[df["type"] == "exp"][feat].dropna()
 
-        if len(a) > 0 and len(b) > 0:
-            _, p = mannwhitneyu(a, b, alternative="two-sided")
-            print(f"{feat}: p = {p:.3e}")
 
 
 plot_distributions(df_3d, features_3d, "3D")
 plot_distributions(df_2d, features_2d, "2D")
 
-run_stats(df_3d, features_3d, "3D")
-run_stats(df_2d, features_2d, "2D")
+# run_stats(df_3d, features_3d, "3D")
+# run_stats(df_2d, features_2d, "2D")

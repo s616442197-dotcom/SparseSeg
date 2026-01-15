@@ -671,3 +671,20 @@ import tifffile as tiff
 # test_volume_label_new=filter_connected_regions_shape( vol01, volume_label0, threshold=0.9,min_ratio=0.5)
 #
 # tiff.imwrite(f'out.tif', 255*test_volume_label_new)
+
+
+def compute_metrics(gt, pred):
+    """给定两个 0/1 mask，计算 IoU 和假阳性率 FPR"""
+
+    gt = gt.astype(bool)
+    pred = pred.astype(bool)
+
+    intersection = np.logical_and(gt, pred).sum()
+    union = np.logical_or(gt, pred).sum()
+    iou = intersection / (union + 1e-8)
+
+    fp = np.logical_and(~gt, pred).sum()
+    tn = np.logical_and(~gt, ~pred).sum()
+    fpr = fp / (fp + tn + 1e-8)
+
+    return iou, fpr

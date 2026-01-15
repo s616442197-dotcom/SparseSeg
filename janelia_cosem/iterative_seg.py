@@ -73,13 +73,15 @@ sparsity_weight=1
 # patch_scale=140 # 4倍数
 # sparsity_weight=0.5
 #
-# raw_name='main_control'
-# mask_name='main_control_mitomask'
-#
-# raw_name='main_patient'
-# mask_name='main_patient_mitomask'
-# patch_scale=40
-# sparsity_weight=5
+raw_name='main_control'
+mask_name='main_control_mitomask'
+
+raw_name='main_patient'
+mask_name='main_patient_mitomask'
+
+low_weight_coeff=300
+patch_scale=120
+sparsity_weight=1
 
 # raw_name='hela2_em_s3'
 # area_coef=1.0

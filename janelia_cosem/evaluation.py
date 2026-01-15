@@ -2,8 +2,7 @@ import os
 import numpy as np
 import tifffile as tiff
 import matplotlib.pyplot as plt
-
-
+from utils import compute_metrics
 # ------------------------------
 # 1. 读取 GT
 # ------------------------------
@@ -20,21 +19,7 @@ pred_filename = "volume_mask_pred_2.tiff"
 # ------------------------------
 # 3. 计算 IoU 和 FPR 的函数
 # ------------------------------
-def compute_metrics(gt, pred):
-    """给定两个 0/1 mask，计算 IoU 和假阳性率 FPR"""
 
-    gt = gt.astype(bool)
-    pred = pred.astype(bool)
-
-    intersection = np.logical_and(gt, pred).sum()
-    union = np.logical_or(gt, pred).sum()
-    iou = intersection / (union + 1e-8)
-
-    fp = np.logical_and(~gt, pred).sum()
-    tn = np.logical_and(~gt, ~pred).sum()
-    fpr = fp / (fp + tn + 1e-8)
-
-    return iou, fpr
 
 
 # ------------------------------
