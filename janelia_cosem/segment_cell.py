@@ -386,6 +386,7 @@ def main(
             volume, edge_vol, base0,
             f"{mask_name}/volume_mask_pred_{interation_idx}.tiff"
         )
+        # tiff.imwrite(f'{mask_name}/edge_mask_{interation_idx}.tif', edge_Line)
         tiff.imwrite(f"{mask_name}/{mask_name}_{interation_idx}.tif", vol01)
         tiff.imwrite(f"{mask_name}/{mask_name}_{interation_idx}_base.tif", test_volume_label_save_u8)
 

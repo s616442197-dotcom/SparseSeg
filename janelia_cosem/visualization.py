@@ -104,11 +104,29 @@ level=2.0
 
 mask_name = f'label_{celltype}_{organelletype}_80'
 
+organelletype = 'er'
 # mask_name='11416_vescilemask'
-# mask_name='11416_nucleusmask'
-# threshold = 0.7
-# min_voxels=10000
-# level=2.0
+mask_name='11415_mitomask'
+threshold = 0.4
+min_voxels=10000
+level=2.0
+
+mask_name='10392_hemozin_mask'
+mask_name='10442_mito_mask'
+mask_name='11415_mitomask'
+mask_name='11416_mitomask'
+mask_name='11416_vescilemask'
+mask_name='11417_mito_mask'
+mask_name='main_control_mitomask'
+mask_name='main_patient_mitomask'
+
+# mask_name='11419_mito_mask'
+# mask_name='10311_mito_mask'
+# mask_name='11420_heart_mask'
+
+threshold = 0.3
+min_voxels=100
+level=2.0
 
 # mask_name='10442_mito_mask'
 # threshold = 0.5
@@ -127,6 +145,8 @@ volume0 = vol00[:, :, :, 1]
 Z, H, W = volume0.shape
 
 zoom_factors = (output_z / Z, 1.0, 1.0)
+zoom_factors = ( min(4.0,output_z / Z), 1.0, 1.0)
+
 
 volume = zoom(
     volume0,
@@ -226,4 +246,4 @@ save_as_obj_with_color(
     material_name=organelle
 )
 
-print("✅ OBJ 导出完成：", f"{mask_name}/volume_mesh_smooth.obj")
+print("✅ OBJ 导出完成：", f"{basedir}/3D_{mask_name}.obj")

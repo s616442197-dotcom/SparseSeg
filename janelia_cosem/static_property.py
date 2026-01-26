@@ -82,7 +82,7 @@ def analyze_3d_connected_components(volume_bin, min_volume=100, connectivity=1):
 # =========================
 # 2D 工具函数
 # =========================
-def analyze_2d_connected_components(volume_bin, connectivity=1):
+def analyze_2d_connected_components(volume_bin, connectivity=1,min_volume=400):
     records = []
 
     for z in range(volume_bin.shape[0]):
@@ -91,26 +91,27 @@ def analyze_2d_connected_components(volume_bin, connectivity=1):
         for region in regionprops(labeled):
 
             area = region.area
-            extent = region.extent
-            solidity = region.solidity
+            if area>min_volume:
+                extent = region.extent
+                solidity = region.solidity
 
-            y0, x0, y1, x1 = region.bbox
-            dy, dx = y1 - y0, x1 - x0
-            bbox_aspect_ratio = max(dx, dy) / max(1, min(dx, dy))
+                y0, x0, y1, x1 = region.bbox
+                dy, dx = y1 - y0, x1 - x0
+                bbox_aspect_ratio = max(dx, dy) / max(1, min(dx, dy))
 
-            if region.axis_minor_length > 0:
-                elongation = region.axis_major_length / region.axis_minor_length
-            else:
-                elongation = np.nan
+                if region.axis_minor_length > 0:
+                    elongation = region.axis_major_length / region.axis_minor_length
+                else:
+                    elongation = np.nan
 
-            records.append({
-                "area": area,
-                "extent": extent,
-                "solidity": solidity,
-                "elongation": elongation,
-                "bbox_aspect_ratio": bbox_aspect_ratio,
-                "eccentricity": region.eccentricity,
-            })
+                records.append({
+                    "area": area,
+                    "extent": extent,
+                    "solidity": solidity,
+                    "elongation": elongation,
+                    "bbox_aspect_ratio": bbox_aspect_ratio,
+                    "eccentricity": region.eccentricity,
+                })
 
     return pd.DataFrame(records)
 
@@ -162,15 +163,24 @@ def run_stats(df, features, label):
 
 
 mask_dirs = {
-    "control": "main_control_mitomask",
-    "exp": "main_patient_mitomask",
+    "control": "/mnt/d/vem_data/main_control_mitomask",
+    "exp": "/mnt/d/vem_data/main_patient_mitomask",
 }
 
-mask_dirs = {
-    "hela2": "label_hela2_mito_80",
-    "jurkat": "label_jurkat_mito_80",
-    "macrophage": "label_macrophage_mito_80",
+min_area = {
+    "control": 400,
+    "exp": 100,
 }
+
+min_volume = {
+    "control": 5000,
+    "exp": 1000,
+}
+# mask_dirs = {
+#     "hela2": "label_hela2_mito_80",
+#     "jurkat": "label_jurkat_mito_80",
+#     "macrophage": "label_macrophage_mito_80",
+# }
 
 dfs_3d, dfs_2d = [], []
 
@@ -178,17 +188,17 @@ for group, mask_dir in mask_dirs.items():
     print(f"Processing {group}")
 
     vol = tiff.imread(f"{mask_dir}/volume_mask_pred_2.tiff")[:, :, :, 1]/255
-    volume_bin = vol > 0.5
+    volume_bin = vol > 0.3
     volume_z = zoom(
         vol,
         zoom=[5,1,1],
         order=3  # cubic interpolation
     )
-    volume_z=volume_z>0.5
+    volume_z=volume_z>0.3
     print(f"Processing 3D")
     df3d = analyze_3d_connected_components(
         volume_z,
-        min_volume=500,
+        min_volume=min_volume[group],
         connectivity=1
     )
     df3d["type"] = group
@@ -196,7 +206,8 @@ for group, mask_dir in mask_dirs.items():
     print(f"Processing 2D")
     df2d = analyze_2d_connected_components(
         volume_bin,
-        connectivity=1
+        connectivity=1,
+        min_volume=min_area[group],
     )
     df2d["type"] = group
     dfs_2d.append(df2d)
@@ -239,12 +250,12 @@ def plot_distributions(df, features, title_prefix, show_legend=False):
         "ytick.labelsize": 14,
     })
 
-    plt.figure(figsize=(14, 18))
+    plt.figure(figsize=(21, 12))
 
     groups = df["type"].unique()
 
     for i, feat in enumerate(features):
-        ax = plt.subplot(3, 2, i + 1)
+        ax = plt.subplot(2, 3, i + 1)
 
         # -------- collect data per group --------
         data_dict = {}
@@ -284,20 +295,20 @@ def plot_distributions(df, features, title_prefix, show_legend=False):
                 corrs.append(r)
 
         # -------- annotate --------
-        if len(corrs) > 0:
-            text = (
-                f"mean r = {np.mean(corrs):.2f}\n"
-                f"min = {np.min(corrs):.2f}, max = {np.max(corrs):.2f}"
-            )
-            ax.text(
-                0.92, 0.92,
-                text,
-                transform=ax.transAxes,
-                ha="right",
-                va="top",
-                fontsize=20,
-                bbox=dict(boxstyle="round", fc="white", alpha=0.8),
-            )
+        # if len(corrs) > 0:
+        #     text = (
+        #         f"mean r = {np.mean(corrs):.2f}\n"
+        #         f"min = {np.min(corrs):.2f}, max = {np.max(corrs):.2f}"
+        #     )
+        #     ax.text(
+        #         0.92, 0.92,
+        #         text,
+        #         transform=ax.transAxes,
+        #         ha="right",
+        #         va="top",
+        #         fontsize=20,
+        #         bbox=dict(boxstyle="round", fc="white", alpha=0.8),
+        #     )
 
         ax.set_title(f"{title_prefix} {feat}")
 
@@ -311,8 +322,8 @@ def plot_distributions(df, features, title_prefix, show_legend=False):
 
 
 
-plot_distributions(df_3d, features_3d, "3D")
-plot_distributions(df_2d, features_2d, "2D")
+plot_distributions(df_3d, features_3d, "3D",show_legend=True)
+plot_distributions(df_2d, features_2d, "2D",show_legend=True)
 
 # run_stats(df_3d, features_3d, "3D")
 # run_stats(df_2d, features_2d, "2D")

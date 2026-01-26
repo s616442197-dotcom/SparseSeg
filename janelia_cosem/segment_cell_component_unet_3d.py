@@ -940,7 +940,6 @@ test_volume_label_save = 1.0 * test_volume_label_new + test_volume_label_base
 test_volume_label_save = np.clip(test_volume_label_save, 0, 1.0)
 test_volume_label_save[nega_test_volume_label>0] = 0
 
-# tiff.imwrite(f'{mask_name}/remain_mask_{interation_idx}.tif', 255*test_volume_label_new)
 # save_volume_with_masks_as_rgb_tiff(volume, edge_vol, test_volume_label_save, f'{mask_name}/remain_mask_{interation_idx}.tif')
 save_volume_with_masks_as_rgb_tiff(volume, edge_vol, base0, f"{mask_name}/volume_mask_pred_{interation_idx}.tiff")
 

@@ -79,9 +79,9 @@ mask_name='main_control_mitomask'
 raw_name='main_patient'
 mask_name='main_patient_mitomask'
 
-low_weight_coeff=300
-patch_scale=120
-sparsity_weight=1
+low_weight_coeff=200
+patch_scale=80
+sparsity_weight=0.1
 
 # raw_name='hela2_em_s3'
 # area_coef=1.0
@@ -136,6 +136,23 @@ sparsity_weight=1
 # low_weight_coeff=20
 # iou_thresh=0.64
 # threshold=0.8
+
+# raw_name='11419_raw'
+# mask_name='11419_mito_mask'
+# low_weight_coeff=400
+# threshold=0.8
+# iou_thresh=0.64
+# patch_scale=120
+# sparsity_weight=0.1
+#
+# raw_name='11415_raw'
+# mask_name='11415_mito_mask'
+# low_weight_coeff=400
+# threshold=0.8
+# iou_thresh=0.64
+# patch_scale=120
+# sparsity_weight=0.1
+
 # 参数组合列表，每个元素都是一个字典
 params_list = [
     {"interation_idx": 0},
