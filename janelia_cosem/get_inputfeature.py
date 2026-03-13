@@ -3,6 +3,7 @@ from typing import Dict, Tuple
 from scipy.ndimage import gaussian_filter, gaussian_laplace, sobel, uniform_filter
 from skimage.feature import structure_tensor
 from skimage.restoration import denoise_tv_chambolle
+from scipy.signal import wiener
 
 # ---------- 小工具 ----------
 
@@ -97,6 +98,22 @@ def _frangi_like_from_hessian(l1: np.ndarray, l2: np.ndarray, beta=0.5, c=15.0) 
     resp = np.exp(-(Ra**2)/(2*beta**2)) * (1 - np.exp(-(S**2)/(2*c**2)))
     return resp.astype(np.float32)
 
+def normalize(img, eps=1e-8, clip_percentile=99.5):
+    img = img.astype(np.float32)
+
+    # 去掉 NaN / Inf
+    img = np.nan_to_num(img, nan=0.0, posinf=0.0, neginf=0.0)
+
+    # 抑制极端值（CTF / deconv 非常需要）
+    vmax = np.percentile(img, clip_percentile)
+    vmin = np.percentile(img, 100 - clip_percentile)
+    img = np.clip(img, vmin, vmax)
+
+    denom = img.max() - img.min()
+    if denom < eps:
+        return np.zeros_like(img)
+
+    return (img - img.min()) / (denom + eps)
 # ---------- 主函数 ----------
 
 def extract_2d_features_from_patch(
@@ -201,6 +218,9 @@ def extract_2d_features_from_patch(
         feats[f"frangi_like_sigma{float(s):.1f}"] = fr
         stack.append(fr)
 
+    for wr in [1,5,10]:
+        wiener_p=normalize(wiener(base_n, (wr, wr)))
+        stack.append(wiener_p)
     feats_stack = np.stack(stack, axis=0) if return_stack else None
     return feats, feats_stack
 

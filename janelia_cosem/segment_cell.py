@@ -13,9 +13,10 @@ from torch import optim
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data.distributed import DistributedSampler
-
+from edge_extract import get_edge_region, filter_edge_area_by_bbox_iou_2d_vectorized,fill_edge_volume_by_region
 import torch.nn as nn
 import torch.nn.functional as F
+from scipy.ndimage import binary_fill_holes
 
 from save_function import save_volume_with_masks_as_rgb_tiff,save_model
 import matplotlib.pyplot as plt
@@ -24,7 +25,7 @@ from datetime import datetime
 from scipy import ndimage
 from munet_dataset import get_edge_mask, ValidPatchSliceDataset
 from MUNET_model import MultiKernelUNet
-from prediction_func import infer_volume_edges_whole
+from prediction_func import infer_volume_edges_whole,feature_volume_generation
 
 
 
@@ -238,13 +239,16 @@ def main(
     if main_proc:
         print("line_coef:", float(line_coef), flush=True)
 
+    feature_volume = feature_volume_generation(volume, thickness=2)
+    D,F,H,W=feature_volume.shape
+
     # ========= Model =========
     if interation_idx == 0:
-        base_model = MultiKernelUNet(in_channels=2 * thickness + 31, out_channels=2).to(device)
+        base_model = MultiKernelUNet(in_channels=F, out_channels=2).to(device)
     else:
         base_model = setup_model(
             MultiKernelUNet,
-            model_args={"in_channels": 2 * thickness + 31, "out_channels": 2},
+            model_args={"in_channels": F, "out_channels": 2},
             checkpoint_folder=mask_name,
             model_name=f"model_{interation_idx-1}.pt",
             device=device,
@@ -267,13 +271,14 @@ def main(
 
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
+
     # ========= Train =========
     for epoch in range(repeated_epoch):
         model.train()
 
         # 你现在的 dataset 每 epoch 重建一次（保持最小改动）
         dataset = ValidPatchSliceDataset(
-            volume, test_volume_label_new, nega_test_volume_label, softnega,
+            volume = volume, mask_volume = test_volume_label_new,feature_volume = feature_volume,negative_volume_label = nega_test_volume_label,softnega= softnega,
             patch_size=patchsize,
             threshold=negative_threshold,
             num_samples=num_samples,
@@ -307,17 +312,18 @@ def main(
         total_loss = 0.0
         batch_count = 0
 
-        for x, y, z, softnega_p, edge in loader:
+        for x, y, z, softnega_p, edge,area_ref,edge_ref in loader:
             x = x.to(device, non_blocking=True)
             y = y.to(device, non_blocking=True)
             z = z.to(device, non_blocking=True)
             softnega_p = softnega_p.to(device, non_blocking=True)
             edge = edge.to(device, non_blocking=True)
-
+            area_ref = area_ref.to(device, non_blocking=True)
+            edge_ref = edge_ref.to(device, non_blocking=True)
             pred = model(x)
 
             loss, loss_dict = total_loss_fn(
-                pred, y, x, z, softnega_p, edge,
+                pred, y, x, z, softnega_p, edge, area_ref,edge_ref,
                 net,  # ⭐ 单卡/多卡都正确
                 low_weight=low_weight_coeff,
                 thickness=thickness,
@@ -346,12 +352,12 @@ def main(
     if main_proc:
         msk_threshold = 0.9
 
-        edge_vol, edge_Line = infer_volume_edges_whole(volume, net, thickness=thickness)
+        edge_vol, edge_Line = infer_volume_edges_whole(feature_volume, net, thickness=thickness)
 
         if not os.path.exists(mask_name):
             os.makedirs(mask_name, exist_ok=True)
 
-        from edge_extract import get_edge_region, filter_edge_area_by_bbox_iou_2d_vectorized
+
 
         thresh_value = np.percentile(edge_vol, 100 * msk_threshold)
 
@@ -364,15 +370,23 @@ def main(
             vol010 = vol010.astype(np.uint8)
         else:
             vol010 = (edge_vol >= max(thresh_value, 0.5)).astype(np.uint8)
+            for z in range(vol010.shape[0]):
+                vol010[z] = binary_fill_holes(vol010[z]).astype(np.uint8)
 
         vol01 = vol010.astype(np.uint8)
 
         test_volume_label_shape = filter_connected_regions_shape(
-            vol01, base0, threshold=threshold, min_ratio=0.8, max_height=z_threshold
+            vol01, base0, threshold=threshold, min_ratio=1.0, max_height=z_threshold
         )
 
+        edge_volume = fill_edge_volume_by_region((edge_Line > 0.5),min_size=5, max_ratio=3.0)
+        # test_volume_label_edge = filter_connected_regions_shape(
+        #     edge_volume, base0, threshold=threshold, min_ratio=1.0, max_height=z_threshold
+        # )
+
+
         test_volume_label_new2 = filter_edge_area_by_bbox_iou_2d_vectorized(
-            (edge_Line > 0.5), test_volume_label_shape,
+            (edge_volume), test_volume_label_shape,
             iou_thresh=iou_thresh, line_fill_thresh=line_coef
         )
 
@@ -386,8 +400,8 @@ def main(
             volume, edge_vol, base0,
             f"{mask_name}/volume_mask_pred_{interation_idx}.tiff"
         )
-        # tiff.imwrite(f'{mask_name}/edge_mask_{interation_idx}.tif', edge_Line)
-        tiff.imwrite(f"{mask_name}/{mask_name}_{interation_idx}.tif", vol01)
+        tiff.imwrite(f'{mask_name}/edge_mask_{interation_idx}.tif', edge_volume)
+        tiff.imwrite(f"{mask_name}/{mask_name}_{interation_idx}.tif", test_volume_label_shape)
         tiff.imwrite(f"{mask_name}/{mask_name}_{interation_idx}_base.tif", test_volume_label_save_u8)
 
         # 保存模型：只保存真实 net（不是 DDP wrapper）

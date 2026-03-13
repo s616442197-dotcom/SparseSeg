@@ -1,9 +1,71 @@
 import torch
 import torch.nn.functional as F
 
+@torch.no_grad()
+def projection_by_mean_diff(input_img, target, negative, eps=1e-8, relu_w=False):
+    """
+    input_img: (B,C,H,W) float
+    target: (B,1,H,W) {0,1}
+    negative: (B,1,H,W) {0,1}
+    return:
+      project_img: (B,1,H,W)
+      w: (C,)
+    """
+    B, C, H, W = input_img.shape
+
+    X = input_img.permute(0,2,3,1).reshape(-1, C)      # (N,C)
+    pos_mask = target.reshape(-1) > 0
+    neg_mask = negative.reshape(-1) > 0
+
+    if pos_mask.sum() == 0 or neg_mask.sum() == 0:
+        raise ValueError("target 或 negative 没有正样本像素，无法求 w")
+
+    mu_pos = X[pos_mask].mean(0)
+    mu_neg = X[neg_mask].mean(0)
+
+    w = mu_pos - mu_neg
+    if relu_w:
+        w = torch.relu(w)
+
+    w = w / (w.norm() + eps)
+
+    project_img = (input_img * w.view(1, C, 1, 1)).sum(dim=1, keepdim=True)
+    return project_img, w
+
+def build_dilated_rings(target, kernel_size=5, edge_size=5):
+
+    target_bin = (target > 0).float()
+
+    # dilation
+    dilated = F.max_pool2d(target_bin, kernel_size, stride=1, padding=kernel_size//2)
+
+    dilated2 = F.max_pool2d(target_bin, kernel_size+edge_size, stride=1,
+                            padding=(kernel_size+edge_size)//2)
+
+    # erosion
+    eroded = -F.max_pool2d(-target_bin, kernel_size, stride=1, padding=kernel_size//2)
+
+    # edge
+    edge = torch.logical_xor(dilated.bool(), eroded.bool()).float()
+
+    # rings
+    dilated_extra = (dilated - target_bin).clamp(min=0)
+    dilated_extra2 = (dilated2 - dilated).clamp(min=0)
+
+    return edge, eroded, dilated_extra, dilated_extra2
+
 def _avg_pool2d(x, win_size):
     pad = win_size // 2
     return F.avg_pool2d(x, win_size, stride=1, padding=pad)
+
+def percentile_binarize_torch(x, n_percent=70):
+    """
+    x: torch.Tensor, shape [H,W] 或 [B,1,H,W]
+    n_percent: 0~100
+    """
+    q = n_percent / 100.0
+    thresh = torch.quantile(x, q)
+    return (x >= thresh).float()
 
 def local_mean_var(x, win_size=3, eps=1e-6):
     """
@@ -75,19 +137,21 @@ def masked_soft_bce_loss(pred, target, negative_target=None,softnega=None,
     negative_target: binary mask, [B,1,H,W], 1 表示可靠负样本
     """
     B, C, H, W = target.shape
-
-    dilation_kernel = torch.ones((C, 1, kernel_size, kernel_size), device=target.device)
-    dilation_kernel2 = torch.ones((C, 1, kernel_size+edge_size, kernel_size+edge_size), device=target.device)
-    # 正样本膨胀
     target_bin = (target > 0).float()
-    dilated = F.conv2d(target_bin, dilation_kernel, padding=kernel_size//2)
-    dilated = (dilated > 0).float()
 
-    dilated2 = F.conv2d(target_bin, dilation_kernel2, padding=(kernel_size+edge_size)//2)
-    dilated2 = (dilated2 > 0).float()
-    dilated_extra = (dilated - target_bin).clamp(min=0)
-    dilated_extra2 = (dilated2 - dilated).clamp(min=0)
+    # dilation_kernel = torch.ones((C, 1, kernel_size, kernel_size), device=target.device)
+    # dilation_kernel2 = torch.ones((C, 1, kernel_size+edge_size, kernel_size+edge_size), device=target.device)
+    # # 正样本膨胀
 
+    # dilated = F.conv2d(target_bin, dilation_kernel, padding=kernel_size//2)
+    # dilated = (dilated > 0).float()
+    #
+    # dilated2 = F.conv2d(target_bin, dilation_kernel2, padding=(kernel_size+edge_size)//2)
+    # dilated2 = (dilated2 > 0).float()
+    # dilated_extra = (dilated - target_bin).clamp(min=0)
+    # dilated_extra2 = (dilated2 - dilated).clamp(min=0)
+
+    _,_,dilated_extra,dilated_extra2 = build_dilated_rings(target, kernel_size=kernel_size, edge_size=edge_size)
     weight = target.clone()
     weight += softnega
     # soft_mask = (softnega > 0)
@@ -123,8 +187,8 @@ def masked_soft_bce_loss(pred, target, negative_target=None,softnega=None,
         weighted_loss = mse_loss.mean()
 
     loss = bce_loss + 0.0*weighted_loss +1.0*push_term
-
-    return loss
+    new_negative_label = (dilated_extra2 > 0) | (negative_target > 0)
+    return loss,new_negative_label
 
 def smoothness_loss(pred_mask, input_image, edge_strength=1.0, eps=1e-6):
     """
@@ -172,34 +236,59 @@ def edge_local_bce_loss(pred, edge_mask, radius=1):
 
     return bce_loss
 
-def total_loss_fn(pred, target, input_img, negative_label, softnega, edge_mask, model,
+def total_loss_fn(pred, target, input_img, negative_label, softnega, edge_mask,area_ref,edge_ref, model,
                   bce_weight=10.0, corr_weight=0.1, smooth_weight=0.1, sparsity_weight=0.01,
                   l1_weight=0.05, high_weight=1.0, low_weight=0.5, area_coef=1, edge_coef=0, thickness=5):
     _, _, H, W = input_img.shape
 
-    bce = masked_soft_bce_loss(pred[:, (0):(1), :, :], target, negative_target=negative_label, softnega=softnega,
+    bce,area_negative_label = masked_soft_bce_loss(pred[:, (0):(1), :, :], target, negative_target=negative_label, softnega=softnega,
                                high_weight=high_weight, low_weight=low_weight, kernel_size=3, edge_size=4)
+    # edge_loss = edge_local_bce_loss(pred[:, 1:2, :, :], edge_mask, radius=3)
+    # edge_ref = input_img[:, 1:2, :, :]  # (B,1,H,W)
+    thresh = torch.quantile(
+        edge_ref.view(edge_ref.shape[0], -1),
+        0.2,
+        dim=1
+    ).view(-1, 1, 1, 1)
+    edge_ref_bin = (edge_ref <= thresh).float()
+    edge_loss,edge_negative_label = masked_soft_bce_loss(pred[:, (1):(2), :, :], edge_mask, negative_target=edge_ref_bin,
+                                     softnega=softnega,
+                                     high_weight=high_weight, low_weight=low_weight, kernel_size=3, edge_size=4)
 
     # contrast = correlation_loss(pred, input_img[:, (thickness):( thickness + 1), :, :])
     # contrast = smoothness_loss(pred, input_img, slice_idx=thickness)
-    smooth = smoothness_loss(pred[:, (0):(1), :, :], input_img[:, (thickness):(thickness + 1), :, :])
 
-    area_correlation = region_consistency_loss(pred[:, (1):(2), :, :],
-                                               input_img[:, (2 * thickness + 30):(2 * thickness + 31), :, :])
-    areea_contrast = 0.1 * region_contrast_loss(pred[:, (1):(2), :, :],
-                                                input_img[:, (2 * thickness + 30):(2 * thickness + 31), :, :])
-    edge_correlation = region_consistency_loss(pred[:, (0):(1), :, :],
-                                               input_img[:, (thickness):(thickness + 1), :, :])
-    edge_contrast = 0.1 * region_contrast_loss(pred[:, (0):(1), :, :],
-                                               input_img[:, (thickness):(thickness + 1), :, :])
+    # area_ref= input_img[:, (thickness):(thickness + 1), :, :]
+    # edge_ref= input_img[:, (2 * thickness + 30):(2 * thickness + 31), :, :]
+    # area_ref,_= projection_by_mean_diff(input_img, target, area_negative_label)
+    # edge_ref, _ = projection_by_mean_diff(input_img, edge_mask, edge_negative_label)
+    # area_ref= input_img[:, (0):(1), :, :]
+    # edge_ref= input_img[:, (1):(2), :, :]
+
+    smooth = smoothness_loss(pred[:, (0):(1), :, :], area_ref)
+    edge_correlation = region_consistency_loss(pred[:, (1):(2), :, :],
+                                               edge_ref)
+    edge_contrast = 0.1 * region_contrast_loss(pred[:, (1):(2), :, :],
+                                               edge_ref)
+    area_correlation = region_consistency_loss(pred[:, (0):(1), :, :],
+                                               area_ref)
+    area_contrast = 0.1 * region_contrast_loss(pred[:, (0):(1), :, :],
+                                               area_ref)
+
+    # smooth = smoothness_loss(pred[:, (0):(1), :, :], input_img[:, 0:1, :, :])
+    # area_correlation = region_consistency_loss(pred[:, (0):(1), :, :],
+    #                                            input_img[:, (0):(1), :, :])
+    # area_contrast = 0.1 * region_contrast_loss(pred[:, (0):(1), :, :],
+    #                                             input_img[:, (0):(1), :, :])
+    # edge_correlation = region_consistency_loss(pred[:, (1):(2), :, :],
+    #                                            input_img[:, (1):(2), :, :])
+    # edge_contrast = 0.1 * region_contrast_loss(pred[:, (1):(2), :, :],
+    #                                            input_img[:, (1):(2), :, :])
 
     correlation = area_coef * area_correlation + edge_coef * edge_correlation
-    contrast = area_coef * areea_contrast + edge_coef * edge_contrast
+    contrast = area_coef * area_contrast + edge_coef * edge_contrast
 
-    # edge_loss = edge_local_bce_loss(pred[:, 1:2, :, :], edge_mask, radius=3)
-    edge_loss = masked_soft_bce_loss(pred[:, (1):(2), :, :], edge_mask, negative_target=negative_label,
-                                     softnega=softnega,
-                                     high_weight=high_weight, low_weight=low_weight, kernel_size=3, edge_size=4)
+
     # edge_loss = smooth
     # contrast = region_contrast_loss(pred, input_img, slice_idx=2 * thickness + 1)
     # 🔹 L1 on model weights

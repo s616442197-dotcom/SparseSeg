@@ -172,6 +172,50 @@ def filter_edge_area_by_perimeter_fast(edge_Line, edge_Area, ratio_low=1.8, rati
 
 import numpy as np
 from skimage.measure import label, regionprops
+from skimage.morphology import convex_hull_image
+from scipy import ndimage
+def fill_edge_volume_by_region(edge_volume, min_size=5, max_ratio=3.0):
+    """
+    对 3D edge_volume [D,H,W] 逐 slice 调用 fill_edge_slice_by_region
+    """
+
+    D = edge_volume.shape[0]
+    filled_volume = np.zeros_like(edge_volume, dtype=bool)
+
+    for z in range(D):
+        if np.any(edge_volume[z]):
+            filled_volume[z] = fill_edge_slice_by_region(
+                edge_volume[z],
+                min_size=min_size,
+                max_ratio=max_ratio
+            )
+
+    return filled_volume
+def fill_edge_slice_by_region(edge_slice, min_size=5, max_ratio=3.0):
+
+    labeled, num = ndimage.label(edge_slice)
+    filled = np.zeros_like(edge_slice, dtype=bool)
+
+    props = regionprops(labeled)
+
+    for prop in props:
+
+        area = prop.area
+        if area < min_size:
+            continue
+
+        minr, minc, maxr, maxc = prop.bbox
+
+        # 只取 bbox 区域
+        region = (labeled[minr:maxr, minc:maxc] == prop.label)
+
+        hull = convex_hull_image(region)
+        hull_area = hull.sum()
+
+        if hull_area >= max_ratio * area:
+            filled[minr:maxr, minc:maxc] = True
+
+    return filled
 
 def filter_edge_area_by_bbox_iou_2d_vectorized(edge_Line, edge_Area, iou_thresh=0.8, line_fill_thresh=0.5,method=0):
     """
@@ -197,68 +241,107 @@ def filter_edge_area_by_bbox_iou_2d_vectorized(edge_Line, edge_Area, iou_thresh=
         area_z = edge_Area[z]
         if not (np.any(line_z) and np.any(area_z)):
             continue
-
+        # line_z = fill_edge_slice_by_region(line_z)
         labeled_line, n_line = label(line_z, return_num=True, connectivity=1)
         labeled_area, n_area = label(area_z, return_num=True, connectivity=1)
 
-        if n_line == 0 or n_area == 0:
-            continue
+        min_size=20
+        keep_line = np.zeros_like(line_z, dtype=bool)
+        keep_area = np.zeros_like(area_z, dtype=bool)
 
-        props_line = regionprops(labeled_line)
-        props_area = regionprops(labeled_area)
+        # area 整体 mask（用于 line 计算重合）
+        area_mask = area_z.astype(bool)
+        line_mask = line_z.astype(bool)
 
-        # === 提取 bbox ===
-        bboxes_area = np.array([p.bbox for p in props_area])  # [Nₐ, 4]
-        area_ids = [p.label for p in props_area]
+        # # ---------- 2️⃣ 处理 line regions ----------
+        # for i in range(1, n_line + 1):
+        #     region = (labeled_line == i)
+        #     size = region.sum()
+        #
+        #     if size < min_size:
+        #         continue
+        #
+        #     overlap = np.logical_and(region, area_mask).sum()
+        #     overlap_ratio = overlap / size
+        #
+        #     if overlap_ratio >= iou_thresh:
+        #         keep_line |= region
 
-        # === 对 line 过滤：去掉在自身 bbox 中填充比例过大的 ===
-        bboxes_line, valid_line_labels = [], []
-        for p in props_line:
+        # ---------- 3️⃣ 处理 area regions ----------
+        for j in range(1, n_area + 1):
+            region = (labeled_area == j)
+            size = region.sum()
+
+            if size < min_size:
+                continue
+
+            overlap = np.logical_and(region, line_mask).sum()
+            overlap_ratio = overlap / size
+
+            if overlap_ratio >= iou_thresh:
+                keep_area |= region
 
 
-            if method ==0:
-                fill_ratio = p.area / (p.area_filled + 1e-6)
-            elif method ==1:
-                if p.euler_number != 1:
-                    continue
-                fill_ratio = p.solidity
-            elif method ==2:
-                if p.euler_number != 1:
-                    continue
-                y1, x1, y2, x2 = p.bbox
-                bbox_area = (y2 - y1) * (x2 - x1)
-                fill_ratio=p.area / (bbox_area + 1e-6)
-            if fill_ratio <= line_fill_thresh:
-                bboxes_line.append(p.bbox)
-                valid_line_labels.append(p.label)
-        # print('a')
-        if len(bboxes_line) == 0:
-            continue  # 该层没有合法线
-
-        bboxes_line = np.array(bboxes_line)
-
-        # === 计算 IoU（矢量化）===
-        ya1, xa1, ya2, xa2 = np.split(bboxes_area[:, None, :], 4, axis=2)
-        yl1, xl1, yl2, xl2 = np.split(bboxes_line[None, :, :], 4, axis=2)
-
-        inter_h = np.maximum(0, np.minimum(ya2, yl2) - np.maximum(ya1, yl1))
-        inter_w = np.maximum(0, np.minimum(xa2, xl2) - np.maximum(xa1, xl1))
-        inter_area = inter_h * inter_w
-        area_a = (ya2 - ya1) * (xa2 - xa1)
-        area_l = (yl2 - yl1) * (xl2 - xl1)
-        iou = inter_area / (area_a + area_l - inter_area + 1e-6)
-        # iou = inter_area / (area_a + 1e-6)
-
-        # === 取每个 area 的最大 IoU ===
-        max_iou_per_area = iou.max(axis=1).ravel()
-        keep_mask = max_iou_per_area >= iou_thresh
-        keep_labels = [area_ids[i] for i in np.where(keep_mask)[0]]
-
-        total_kept_regions += len(keep_labels)
-
-        # === 输出该层 ===
-        if len(keep_labels) > 0:
-            filtered[z] = np.isin(labeled_area, keep_labels).astype(np.uint8)
+        filtered[z] = keep_line | keep_area
+        _, z_num = label(filtered, return_num=True, connectivity=1)
+        total_kept_regions+=z_num
+        # if n_line == 0 or n_area == 0:
+        #     continue
+        #
+        # props_line = regionprops(labeled_line)
+        # props_area = regionprops(labeled_area)
+        #
+        # # === 提取 bbox ===
+        # bboxes_area = np.array([p.bbox for p in props_area])  # [Nₐ, 4]
+        # area_ids = [p.label for p in props_area]
+        #
+        # # === 对 line 过滤：去掉在自身 bbox 中填充比例过大的 ===
+        # bboxes_line, valid_line_labels = [], []
+        # for p in props_line:
+        #
+        #     if method ==0:
+        #         fill_ratio = p.area / (p.area_filled + 1e-6)
+        #     elif method ==1:
+        #         if p.euler_number != 1:
+        #             continue
+        #         fill_ratio = p.solidity
+        #     elif method ==2:
+        #         if p.euler_number != 1:
+        #             continue
+        #         y1, x1, y2, x2 = p.bbox
+        #         bbox_area = (y2 - y1) * (x2 - x1)
+        #         fill_ratio=p.area / (bbox_area + 1e-6)
+        #     if fill_ratio <= line_fill_thresh:
+        #         bboxes_line.append(p.bbox)
+        #         valid_line_labels.append(p.label)
+        # # print('a')
+        # if len(bboxes_line) == 0:
+        #     continue  # 该层没有合法线
+        #
+        # bboxes_line = np.array(bboxes_line)
+        #
+        # # === 计算 IoU（矢量化）===
+        # ya1, xa1, ya2, xa2 = np.split(bboxes_area[:, None, :], 4, axis=2)
+        # yl1, xl1, yl2, xl2 = np.split(bboxes_line[None, :, :], 4, axis=2)
+        #
+        # inter_h = np.maximum(0, np.minimum(ya2, yl2) - np.maximum(ya1, yl1))
+        # inter_w = np.maximum(0, np.minimum(xa2, xl2) - np.maximum(xa1, xl1))
+        # inter_area = inter_h * inter_w
+        # area_a = (ya2 - ya1) * (xa2 - xa1)
+        # area_l = (yl2 - yl1) * (xl2 - xl1)
+        # iou = inter_area / (area_a + area_l - inter_area + 1e-6)
+        # # iou = inter_area / (area_a + 1e-6)
+        #
+        # # === 取每个 area 的最大 IoU ===
+        # max_iou_per_area = iou.max(axis=1).ravel()
+        # keep_mask = max_iou_per_area >= iou_thresh
+        # keep_labels = [area_ids[i] for i in np.where(keep_mask)[0]]
+        #
+        # total_kept_regions += len(keep_labels)
+        #
+        # # === 输出该层 ===
+        # if len(keep_labels) > 0:
+        #     filtered[z] = np.isin(labeled_area, keep_labels).astype(np.uint8)
 
     print(f"✅ 处理完成，共保留 {total_kept_regions} 个符合 IoU>{iou_thresh} 的区域")
     return filtered

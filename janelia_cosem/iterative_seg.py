@@ -10,13 +10,13 @@ patch_scale=140 # 4倍数
 area_coef=1.0
 edge_coef=0.5
 negative_threshold=3
-low_weight_coeff=40
+low_weight_coeff=200
 sparsity_weight=0.1
 
 # value can be modified according to user's need
-raw_name='11416_raw'
-mask_name='11416_mitomask'
-patch_scale=40 # 4倍数
+raw_name='11442_raw'
+mask_name='11442_mito_mask'
+patch_scale=80 # 4倍数
 sparsity_weight=0.5
 
 

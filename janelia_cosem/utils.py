@@ -410,26 +410,26 @@ def filter_connected_regions_shape(
         # --- Hu 矩（自带平移/缩放/旋转不变性） ---
         # skimage 已经帮你算好 p.moments_hu
         hu = np.array(p.moments_hu, dtype=np.float64).ravel()  # 长度 7
-
-        # log 变换（标准做法，稳定数量级）
-        hu_log = -np.sign(hu) * np.log10(np.abs(hu) + 1e-10)
-
-        # 依据经验对不同阶 Hu 做一个粗略缩放，避免某一维量级过大
-        # 大致假定：
-        #   hu_log[0] ~ O(1),
-        #   hu_log[1] ~ O(2),
-        #   hu_log[2..3] ~ O(3),
-        #   hu_log[4..5] ~ O(4),
-        #   hu_log[6] ~ O(5)
-        scale_factors = np.array([1, 2, 3, 3, 4, 4, 5], dtype=np.float32)
-        hu_norm = (hu_log / scale_factors).astype(np.float32)
+        hu_norm=hu[0:3]
+        # # log 变换（标准做法，稳定数量级）
+        # hu_log = -np.sign(hu) * np.log10(np.abs(hu) + 1e-10)
+        #
+        # # 依据经验对不同阶 Hu 做一个粗略缩放，避免某一维量级过大
+        # # 大致假定：
+        # #   hu_log[0] ~ O(1),
+        # #   hu_log[1] ~ O(2),
+        # #   hu_log[2..3] ~ O(3),
+        # #   hu_log[4..5] ~ O(4),
+        # #   hu_log[6] ~ O(5)
+        # scale_factors = np.array([1, 2, 3, 3, 4, 4, 5], dtype=np.float32)
+        # hu_norm = (hu_log / scale_factors).astype(np.float32)
 
         # --- 拼接特征 ---
         # 这里把“易解释的几何特征”放前面，Hu 放后面
         # 你之前给 circularity 乘了 5，我这里也放大一点权重
         geom_feat = np.array([
             circularity,  # 放大圆度权重
-            np.log1p(aspect),  # aspect 比较大，用 log 压一下
+            (aspect),  # aspect 比较大，用 log 压一下
             compact,  # [0,1]
             solidity,  # [0,1]
             ecc,  # [0,1)
@@ -439,8 +439,45 @@ def filter_connected_regions_shape(
 
         feat = np.concatenate([geom_feat, hu_norm]).astype(np.float32)
 
-        return geom_feat
+        return feat
 
+    def check_vec_condition(mask_feats, vec, threshold=0.3, eps=1e-8):
+        """
+        mask_feats : (N, D)
+        vec        : (D,)
+        threshold  : float
+
+        return : bool
+        """
+
+        mask_feats = np.asarray(mask_feats)
+        vec = np.asarray(vec)
+
+        # -------------------------
+        # 条件 1：存在某个模板完全匹配
+        # -------------------------
+        error = np.abs(vec[None, :] - mask_feats) / (np.abs(mask_feats) + eps)
+
+        cond1 = np.any(np.all(error < threshold, axis=1))
+
+        # -------------------------
+        # 条件 2：靠近整体统计范围
+        # -------------------------
+        mean_feat = mask_feats.mean(axis=0)
+        max_feat = mask_feats.max(axis=0)
+        min_feat = mask_feats.min(axis=0)
+
+        alpha = (1.0 + threshold) / 2.0
+
+        range_feat = max_feat - min_feat
+
+        cond2 = np.all(
+            np.abs(vec - mean_feat) <
+            alpha * (np.abs(range_feat) + eps)
+        )
+
+        # -------------------------
+        return cond1 and cond2
     # === 2️⃣ 提取 mask_label 模板特征 ===
     mask_feats = []
     mask_sizes = []
@@ -455,6 +492,8 @@ def filter_connected_regions_shape(
     if len(mask_feats) == 0:
         return np.zeros_like(test_volume_label)
     mask_feats = np.stack(mask_feats)
+    min_feat = mask_feats.min(axis=0)  # [D]
+    max_feat = mask_feats.max(axis=0)  # [D]
     min_size_v2, max_size_v2 = np.min(mask_sizes), np.max(mask_sizes)
     # print(np.shape(mask_feats))
     # === 3️⃣ 遍历 test_volume_label 每层 ===
@@ -467,26 +506,29 @@ def filter_connected_regions_shape(
             if p.euler_number != 1:
                 continue
             # 面积过滤
-            if p.area < min_size_v2 * 0.2 or p.area > max_size_v2 / min_ratio:
+            if p.area < min_size_v2 * min_ratio or p.area > max_size_v2 / min_ratio:
                 continue
 
             vec = get_shape_vec(p)
             if np.all(vec == 0):
                 continue
 
-            vec = vec
-
-            eps = 1e-8
-            diff = np.abs(vec[None, :] - mask_feats)  # [N, D]
-            rel_diff2 = (diff ** 2) / (mask_feats ** 2 + eps)  # 相对平方差
-            dist = np.max(rel_diff2, axis=1)  # 每个模板的平均相对误差
-            # print(dist)
-            sims = 1.0 - np.clip(dist, 0.0, 1.0)  # 转为“相似度”
-
-            if np.max(sims) >= threshold:
-                # print(dist)
+            # vec = vec
+            #
+            # eps = 1e-8
+            # diff = np.abs(vec[None, :] - mask_feats)  # [N, D]
+            # rel_diff2 = (diff ** 2) / (mask_feats ** 2 + eps)  # 相对平方差
+            # dist = np.max(rel_diff2, axis=1)  # 每个模板的平均相对误差
+            # # print(dist)
+            # sims = 1.0 - np.clip(dist, 0.0, 1.0)  # 转为“相似度”
+            #
+            # if np.max(sims) >= threshold:
+            #     # print(dist)
+            #     test_new[z][labeled_v1 == p.label] = 1
+            # if np.all((vec >= min_feat) & (vec <= max_feat)):
+            #     test_new[z][labeled_v1 == p.label] = 1
+            if check_vec_condition(mask_feats, vec, 1-threshold):
                 test_new[z][labeled_v1 == p.label] = 1
-
     # === 4️⃣ 应用交集和体积过滤 ===
     if max_height>5:
         test_out = intersect_regions(

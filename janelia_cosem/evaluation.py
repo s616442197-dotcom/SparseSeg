@@ -41,9 +41,9 @@ organelletype='er'
 organelletype='endo'
 organelletype='lyso'
 
-organelletype='mito'
+# organelletype='mito'
 
-gt_path = f"download/{celltype}_{organelletype}_s3.tif"
+gt_path = f"/mnt/d/vem_data/download/{celltype}_{organelletype}_s3.tif"
 gt = tiff.imread(gt_path)
 
 # 保证是 0/1 mask
@@ -78,16 +78,16 @@ for folder in pred_root_list:
     iou_star_list.append(iou_star)
     fpr_star_list.append(fpr_star)
 
-    # ilastik_path = f"download/pred/exported_data_jurkat_{folder}.tif"
-    ilastik_path = f"download/pred/exported_data_{folder}.tif"
-
-    pred_ilastik = tiff.imread(ilastik_path)
-    pred_ilastik = pred_ilastik[:, 0].squeeze()
-    pred_ilastik = (pred_ilastik > 0.3 * 65535).astype(np.uint8)
-
-    iou_ilastik, fpr_ilastik = compute_metrics(gt, pred_ilastik)
-    iou_ilastik_list.append(iou_ilastik)
-    fpr_ilastik_list.append(fpr_ilastik)
+    # # ilastik_path = f"download/pred/exported_data_jurkat_{folder}.tif"
+    # ilastik_path = f"download/pred/exported_data_{folder}.tif"
+    #
+    # pred_ilastik = tiff.imread(ilastik_path)
+    # pred_ilastik = pred_ilastik[:, 0].squeeze()
+    # pred_ilastik = (pred_ilastik > 0.3 * 65535).astype(np.uint8)
+    #
+    # iou_ilastik, fpr_ilastik = compute_metrics(gt, pred_ilastik)
+    # iou_ilastik_list.append(iou_ilastik)
+    # fpr_ilastik_list.append(fpr_ilastik)
 #%%
 plt.rcParams.update({
     "font.size": 20,
@@ -102,7 +102,7 @@ plt.figure(figsize=(7,5))
 # plt.subplot(1,2,1)
 plt.plot(labels, iou_list, marker="o", label="MUnet")
 plt.plot(labels, iou_star_list, marker="o", label="Stardist")
-plt.plot(labels, iou_ilastik_list, marker="o", label="Ilastik")
+# plt.plot(labels, iou_ilastik_list, marker="o", label="Ilastik")
 
 plt.title(f"IoU of {organelletype}")
 plt.xlabel("mask ratio")
@@ -123,50 +123,50 @@ plt.legend(
 # plt.legend()
 
 plt.tight_layout()
-plt.savefig("download/pred/compare_pred_vs_predstar.png", dpi=200)
+# plt.savefig("download/pred/compare_pred_vs_predstar.png", dpi=200)
 plt.show()
 
-#%%
-save_dir = "download/pred"
-os.makedirs(save_dir, exist_ok=True)
-
-# pred_ori shape = [D, H, W, 2]？
-# 你需要的是第 0 个通道
-pred_ori_0 = pred_ori[:, :, :, 0]
-
-# 归一化检查：确保 pred 和 gt 是 0/1 mask
-pred_vis = (pred * 255).astype(np.uint8)
-pred_star_vis = (pred_star * 255).astype(np.uint8)
-gt_vis = (gt * 255).astype(np.uint8)
-
-# 转成 uint8
-pred_ori_vis = pred_ori_0.astype(np.uint8)
-
-# -------------------------
-# 1) pred 版本
-# -------------------------
-stack_pred = np.stack([pred_ori_vis, pred_vis, gt_vis], axis=-1)  # [D,H,W,3]
-tiff.imwrite(
-    os.path.join(save_dir, "compare_pred.tif"),
-    stack_pred,
-    photometric="rgb"
-)
-
-# -------------------------
-# 2) pred_star 版本
-# -------------------------
-stack_pred_star = np.stack([pred_ori_vis, pred_star_vis, gt_vis], axis=-1)
-tiff.imwrite(
-    os.path.join(save_dir, "compare_pred_star.tif"),
-    stack_pred_star,
-    photometric="rgb"
-)
-
-stack_pred_star = np.stack([pred_ori_vis, 255*pred_ilastik, gt_vis], axis=-1)
-tiff.imwrite(
-    os.path.join(save_dir, "compare_pred_ilastik.tif"),
-    stack_pred_star,
-    photometric="rgb"
-)
-
-print("Done! 已保存: compare_pred.tif 和 compare_pred_star.tif")
+# #%%
+# save_dir = "download/pred"
+# os.makedirs(save_dir, exist_ok=True)
+#
+# # pred_ori shape = [D, H, W, 2]？
+# # 你需要的是第 0 个通道
+# pred_ori_0 = pred_ori[:, :, :, 0]
+#
+# # 归一化检查：确保 pred 和 gt 是 0/1 mask
+# pred_vis = (pred * 255).astype(np.uint8)
+# pred_star_vis = (pred_star * 255).astype(np.uint8)
+# gt_vis = (gt * 255).astype(np.uint8)
+#
+# # 转成 uint8
+# pred_ori_vis = pred_ori_0.astype(np.uint8)
+#
+# # -------------------------
+# # 1) pred 版本
+# # -------------------------
+# stack_pred = np.stack([pred_ori_vis, pred_vis, gt_vis], axis=-1)  # [D,H,W,3]
+# tiff.imwrite(
+#     os.path.join(save_dir, "compare_pred.tif"),
+#     stack_pred,
+#     photometric="rgb"
+# )
+#
+# # -------------------------
+# # 2) pred_star 版本
+# # -------------------------
+# stack_pred_star = np.stack([pred_ori_vis, pred_star_vis, gt_vis], axis=-1)
+# tiff.imwrite(
+#     os.path.join(save_dir, "compare_pred_star.tif"),
+#     stack_pred_star,
+#     photometric="rgb"
+# )
+#
+# stack_pred_star = np.stack([pred_ori_vis, 255*pred_ilastik, gt_vis], axis=-1)
+# tiff.imwrite(
+#     os.path.join(save_dir, "compare_pred_ilastik.tif"),
+#     stack_pred_star,
+#     photometric="rgb"
+# )
+#
+# print("Done! 已保存: compare_pred.tif 和 compare_pred_star.tif")

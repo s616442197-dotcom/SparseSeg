@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
 class AttentionGate(nn.Module):
     """
     g: gating（来自 decoder 的上采样特征）
@@ -40,9 +39,8 @@ class AttentionGate(nn.Module):
         out = x * psi  # 对 skip 做加权
         return out
 
-
 class MultiKernelConvBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_sizes=(3, 5, 15)):
+    def __init__(self, in_channels, out_channels, kernel_sizes=(3, 5, 7)):
         super().__init__()
         padding = [(k // 2) for k in kernel_sizes]
         self.branches = nn.ModuleList([
@@ -64,49 +62,52 @@ class MultiKernelConvBlock(nn.Module):
         out = self.merge(concat)
         return out
 
+class ConvBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.block = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, 3, padding=1),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(out_channels, out_channels, 3, padding=1),
+            nn.BatchNorm2d(out_channels),
+            nn.ReLU(inplace=True),
+        )
+
+    def forward(self, x):
+        return self.block(x)
 
 class MultiKernelUNet(nn.Module):
     def __init__(self, in_channels=1, out_channels=1):
         super().__init__()
+
+        # ===== Encoder (Multi-kernel, 低分辨率，值得) =====
         self.enc1 = MultiKernelConvBlock(in_channels, 64)
         self.enc2 = MultiKernelConvBlock(64, 128)
         self.enc3 = MultiKernelConvBlock(128, 256)
 
         self.pool = nn.MaxPool2d(2)
 
+        # ===== Decoder (轻量，省显存) =====
         self.up2 = nn.ConvTranspose2d(256, 128, 2, stride=2)
-        self.dec2 = MultiKernelConvBlock(256, 128)  # cat(128, 128)
-        self.up1 = nn.ConvTranspose2d(128, 64, 2, stride=2)
-        self.dec1 = MultiKernelConvBlock(128, 64)  # cat(64, 64)
+        self.dec2 = ConvBlock(256, 128)   # cat(d2, e2)
 
-        # ★ Attention Gates：对 e2, e1 进行筛选
-        self.ag2 = AttentionGate(F_g=128, F_l=128, F_int=64)  # 对应 d2 与 e2
-        self.ag1 = AttentionGate(F_g=64, F_l=64, F_int=32)  # 对应 d1 与 e1
+        self.up1 = nn.ConvTranspose2d(128, 64, 2, stride=2)
+        self.dec1 = ConvBlock(128, 64)    # cat(d1, e1)
 
         self.final = nn.Conv2d(64, out_channels, 1)
 
     def forward(self, x):
-        # x_pad, original_hw = pad_to_multiple(x, multiple=4)
+        # ===== Encoder =====
+        e1 = self.enc1(x)                 # (B, 64,  H,   W)
+        e2 = self.enc2(self.pool(e1))     # (B, 128, H/2, W/2)
+        e3 = self.enc3(self.pool(e2))     # (B, 256, H/4, W/4)
 
-        e1 = self.enc1(x)  # (B, 64,  H,   W)
-        e2 = self.enc2(self.pool(e1))  # (B, 128, H/2, W/2)
-        e3 = self.enc3(self.pool(e2))  # (B, 256, H/4, W/4)
-
-        d2 = self.up2(e3)  # (B, 128, H/2, W/2)
-        # e2_att = self.ag2(d2, e2)       # 注意力筛选后的 skip
-        # d2 = self.dec2(torch.cat([d2, e2_att], dim=1))
-
+        # ===== Decoder =====
+        d2 = self.up2(e3)                 # (B, 128, ~H/2, ~W/2)
         d2 = self.dec2(torch.cat([d2, e2], dim=1))
 
-        d1 = self.up1(d2)  # (B, 64, H, W)
-
-        # e1_att = self.ag1(d1, e1)       # 注意力筛选后的 skip
-        # d1 = self.dec1(torch.cat([d1, e1_att], dim=1))
-
+        d1 = self.up1(d2)                 # (B, 64, ~H, ~W)
         d1 = self.dec1(torch.cat([d1, e1], dim=1))
-        out = self.final(d1)
 
-        # H, W = original_hw
-        # out = out[:, :, :H, :W]
-        return out
-
+        return self.final(d1)

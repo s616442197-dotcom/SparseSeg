@@ -4,14 +4,20 @@ from tqdm import tqdm
 from scipy.ndimage import binary_closing,binary_erosion, binary_dilation, label as nd_label,gaussian_filter, distance_transform_edt
 from skimage.transform import downscale_local_mean
 from get_inputfeature import extract_2d_features_from_patch
+from get_inputfeature_new import extract_stack_features
 
 def pad_to_multiple_of(volume, multiple=4):
     """
-    将 volume 的 H 和 W 补零到 multiple 的倍数
-    volume: [D, H, W]
-    return: padded_volume, pad_info
+    将 volume 的最后两个维度 (H, W) pad 到 multiple 的倍数
+    其余维度保持不变
+
+    volume: np.ndarray [..., H, W]
+    return:
+        padded_volume: np.ndarray [..., H_new, W_new]
+        pad_info: dict
     """
-    D, H, W = volume.shape
+    *prefix_dims, H, W = volume.shape
+
     new_H = ((H + multiple - 1) // multiple) * multiple
     new_W = ((W + multiple - 1) // multiple) * multiple
 
@@ -20,28 +26,104 @@ def pad_to_multiple_of(volume, multiple=4):
     pad_left = (new_W - W) // 2
     pad_right = new_W - W - pad_left
 
-    padded = np.pad(volume,
-                    ((0, 0), (pad_top, pad_bottom), (pad_left, pad_right)),
-                    mode='constant', constant_values=0)
+    # 构造 pad_width，只 pad 最后两个维度
+    pad_width = [(0, 0)] * len(prefix_dims) + [
+        (pad_top, pad_bottom),
+        (pad_left, pad_right),
+    ]
+
+    padded = np.pad(
+        volume,
+        pad_width=pad_width,
+        mode="constant",
+        constant_values=0,
+    )
 
     pad_info = {
         "pad_top": pad_top,
         "pad_bottom": pad_bottom,
         "pad_left": pad_left,
-        "pad_right": pad_right
+        "pad_right": pad_right,
     }
 
     return padded, pad_info
 
-
 def unpad_volume(padded_volume, pad_info):
     """
-    还原为原始尺寸
-    """
-    return padded_volume[:,
-           pad_info["pad_top"]:-pad_info["pad_bottom"] or None,
-           pad_info["pad_left"]:-pad_info["pad_right"] or None]
+    对 padded_volume 的最后两个维度 (H, W) 进行 unpad
+    其余维度保持不变
 
+    padded_volume: (..., H, W)
+    pad_info: dict with keys pad_top, pad_bottom, pad_left, pad_right
+    """
+    pad_top    = pad_info["pad_top"]
+    pad_bottom = pad_info["pad_bottom"]
+    pad_left   = pad_info["pad_left"]
+    pad_right  = pad_info["pad_right"]
+
+    h_slice = slice(
+        pad_top,
+        -pad_bottom if pad_bottom > 0 else None
+    )
+    w_slice = slice(
+        pad_left,
+        -pad_right if pad_right > 0 else None
+    )
+
+    return padded_volume[..., h_slice, w_slice]
+
+def feature_volume_generation(volume_np, thickness=2):
+    """
+    volume_np: np.ndarray [D, H, W], float32, normalized to [0, 1]
+
+    Returns:
+        restored_feature_volume: np.ndarray [D, F, H, W]
+    """
+
+    padded_volume, pad_info = pad_to_multiple_of(volume_np, multiple=4)
+    D, H, W = padded_volume.shape
+
+    feature_volume = None  # 先不分配，等知道 F 再说
+
+    for z in tqdm(
+        range(thickness, D - thickness),
+        desc="Extracting features per slice"
+    ):
+        # === 取 Z-stack ===
+        slice_img = padded_volume[
+            z - thickness : z + thickness + 1
+        ]  # shape: (2*thickness+1, H, W)
+
+        # === 提特征（你原来的逻辑）===
+        # _, feats_stack = extract_2d_features_from_patch(
+        #     slice_img,
+        #     aggregate_mode="gaussian",
+        #     sigma_z=0.8,
+        #     denoise_tv=0.05,
+        #     sigmas_gauss=(1.0, 2.0, 4.0),
+        #     sigmas_hessian=(1.0, 2.0, 4.0),
+        #     win_local_stats=9,
+        #     st_sigma=1.0,
+        # )
+        feats_stack = extract_stack_features(slice_img)
+
+        # feats_stack: (F, H, W)
+
+        # === 第一次才知道 F，初始化 volume ===
+        if feature_volume is None:
+            F = feats_stack.shape[0]
+            feature_volume = np.zeros(
+                (D, F, H, W),
+                dtype=np.float32
+            )
+
+        # === 放回对应 z ===
+        feature_volume[z] = feats_stack
+
+    # === 去 padding（只去 Z/H/W，不动 feature 维）===
+    restored_feature_volume = unpad_volume(feature_volume, pad_info)
+
+    return restored_feature_volume
 
 def infer_volume_edges(volume_np, model, threshold=0.5, patch_size=(128, 128), stride=(64, 64), thickness=2):
     """
@@ -111,16 +193,16 @@ def infer_volume_edges(volume_np, model, threshold=0.5, patch_size=(128, 128), s
     restored = unpad_volume(edge_volume, pad_info)
     return restored
 
-
-def infer_volume_edges_whole(volume_np, model, thickness=2):
+def infer_volume_edges_whole(feature_volume, model, thickness=2):
     """
     volume_np: [D, H, W], float32, normalized to [0, 1]
     model: model(input: [1, 1, H, W]) → pred [1, 1, H, W]
     Returns:
         edge_volume: [D, H, W], uint8 0/1 mask
     """
-    padded_volume, pad_info = pad_to_multiple_of(volume_np, multiple=4)
-    D, H, W = padded_volume.shape
+    # volume_np = feature_volume[:, 0, :, :]
+    padded_volume, pad_info = pad_to_multiple_of(feature_volume, multiple=4)
+    D,F, H, W = padded_volume.shape
 
     pred_volume = np.zeros((D, H, W), dtype=np.float32)
     edge_volume = np.zeros((D, H, W), dtype=np.float32)
@@ -129,21 +211,24 @@ def infer_volume_edges_whole(volume_np, model, thickness=2):
     model.eval()
     model.cuda()
 
+    # feature_volume = feature_volume_generation(volume_np, thickness=2)
     with torch.no_grad():
         for z in tqdm(range(thickness, D - thickness), desc="Predicting edges per slice"):
-            slice_img = padded_volume[(z - thickness):(z + thickness + 1)]  # [3, H, W]
-            # slice_img = padded_volume[(z-1):(z+2)]  # [H, W]
-            _, feats_stack = extract_2d_features_from_patch(
-                slice_img,  # [Z,H,W] 例如 thickness=1 -> Z=3
-                aggregate_mode="gaussian",
-                sigma_z=0.8,
-                denoise_tv=0.05,  # 可设 0 关闭
-                sigmas_gauss=(1.0, 2.0, 4.0),
-                sigmas_hessian=(1.0, 2.0, 4.0),
-                win_local_stats=9,
-                st_sigma=1.0,
-            )
-            input_tensor = torch.from_numpy(feats_stack).unsqueeze(0).float().cuda()  # [1, 1, H, W]
+            # slice_img = padded_volume[(z - thickness):(z + thickness + 1)]  # [3, H, W]
+            # # slice_img = padded_volume[(z-1):(z+2)]  # [H, W]
+            # _, feats_stack = extract_2d_features_from_patch(
+            #     slice_img,  # [Z,H,W] 例如 thickness=1 -> Z=3
+            #     aggregate_mode="gaussian",
+            #     sigma_z=0.8,
+            #     denoise_tv=0.05,  # 可设 0 关闭
+            #     sigmas_gauss=(1.0, 2.0, 4.0),
+            #     sigmas_hessian=(1.0, 2.0, 4.0),
+            #     win_local_stats=9,
+            #     st_sigma=1.0,
+            # )
+            feats_stack=padded_volume[z]
+
+            input_tensor = torch.from_numpy(feats_stack).unsqueeze(0).float().cuda()  # [1, F, H, W]
 
             pred = model(input_tensor)  # [1, 1, H, W]
             pred_prob_stack = torch.sigmoid(pred).squeeze(0).cpu().numpy()  # [2*thickness+1, H, W]
