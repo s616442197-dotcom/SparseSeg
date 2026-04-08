@@ -17,7 +17,7 @@ from edge_extract import get_edge_region, filter_edge_area_by_bbox_iou_2d_vector
 import torch.nn as nn
 import torch.nn.functional as F
 from scipy.ndimage import binary_fill_holes
-
+import zarr
 from save_function import save_volume_with_masks_as_rgb_tiff,save_model
 import matplotlib.pyplot as plt
 from torch.utils.data import Dataset, DataLoader,RandomSampler
@@ -25,10 +25,59 @@ from datetime import datetime
 from scipy import ndimage
 from munet_dataset import get_edge_mask, ValidPatchSliceDataset
 from MUNET_model import MultiKernelUNet
-from prediction_func import infer_volume_edges_whole,feature_volume_generation
+from prediction_func import infer_volume_edges_whole,feature_volume_generation,infer_volume_edges_patchwise
+from get_inputfeature_new import extract_stack_features
 
+def get_or_build_feature_volume(volume, feature_path, thickness=2):
+    """
+    feature_path: xxx.zarr
+    返回: zarr array (D,F,H,W)
+    """
 
+    start_time = datetime.now()
+    print(f"⏱️ 开始时间: {start_time}")
 
+    D, H, W = volume.shape
+
+    # =========================
+    # 1️⃣ 已存在 → 直接打开
+    # =========================
+    if os.path.exists(feature_path):
+        print("✅ 使用已有 Zarr feature")
+        z = zarr.open(feature_path, mode='r')
+        return z
+
+    # =========================
+    # 2️⃣ 创建 Zarr
+    # =========================
+    print("⚠️ 构建 Zarr feature...")
+
+    os.makedirs(os.path.dirname(feature_path), exist_ok=True)
+
+    # 先算一个 slice 确定 F
+    test = extract_stack_features(volume[thickness:thickness*2+1])
+    F = test.shape[0]
+
+    z = zarr.open(
+        feature_path,
+        mode='w',
+        shape=(D, F, H, W),
+        chunks=(1, F, 256, 256),   # 🔥 关键：patch级chunk
+        dtype='float32'
+    )
+
+    # =========================
+    # 3️⃣ 写入
+    # =========================
+    for z_idx in range(thickness, D - thickness):
+        slice_img = volume[z_idx-thickness:z_idx+thickness+1]
+        feats = extract_stack_features(slice_img)
+        z[z_idx] = feats
+
+    end_time = datetime.now()
+    print(f"⏱️ 完成，用时: {(end_time-start_time).total_seconds():.2f}s")
+
+    return z
 def setup_model(model_class, model_args=None, checkpoint_folder="checkpoints", model_name="unet_model.pt",
                 device="cuda", rank=0):
     os.makedirs(checkpoint_folder, exist_ok=True)
@@ -162,6 +211,7 @@ def main(
     patch_scale=140,
     raw_name="jurkat_em_s3",
     mask_name="label_jurkat_er_30",
+    folder_name="label_jurkat_er_30",
     area_coef=1.0,
     edge_coef=0.5,
     iou_thresh=0.6,
@@ -169,9 +219,9 @@ def main(
     negative_threshold=1.0,
     low_weight_coeff=10.0,
     sparsity_weight=0.0,
-    repeated_epoch=60,
+    repeated_epoch=50,
     batch_size=12,
-    num_samples=600,
+    num_samples=1000,
     thickness=2,
     base_folder="inputdata",
 ):
@@ -188,6 +238,7 @@ def main(
         print(f"[INFO] interation_idx    = {interation_idx}", flush=True)
         print(f"[INFO] raw_name          = {raw_name}", flush=True)
         print(f"[INFO] mask_name         = {mask_name}", flush=True)
+        print(f"[INFO] folder_name         = {folder_name}", flush=True)
         print(f"[INFO] patch_scale       = {patch_scale}", flush=True)
         print(f"[INFO] z_threshold       = {z_threshold}", flush=True)
         print(f"[INFO] iou_thresh        = {iou_thresh}", flush=True)
@@ -196,6 +247,7 @@ def main(
         print(f"[INFO] low_weight_coeff  = {low_weight_coeff}", flush=True)
         print(f"[INFO] sparsity_weight   = {sparsity_weight}", flush=True)
         print("=" * 70, flush=True)
+
 
     # ===== 数据读取：最小改动，所有 rank 都读（稳）=====
     vol0 = tiff.imread(os.path.join(base_folder, f"{raw_name}.tif"))
@@ -208,9 +260,9 @@ def main(
         test_volume_label = tiff.imread(os.path.join(base_folder, f"{mask_name}.tif"))
         test_volume_label_base = (test_volume_label > 0).astype(np.uint8)
     else:
-        test_volume_label_base = tiff.imread(f"{mask_name}/{mask_name}_{interation_idx-1}_base.tif")
+        test_volume_label_base = tiff.imread(f"{folder_name}/{mask_name}_{interation_idx-1}_base.tif")
         test_volume_label_base = (test_volume_label_base > 0).astype(np.uint8)
-        test_volume_label = tiff.imread(f"{mask_name}/{mask_name}_{interation_idx-1}.tif")
+        # test_volume_label = tiff.imread(f"{folder_name}/{mask_name}_{interation_idx-1}.tif")
 
     test_volume_label_new = filter_connected_regions_shape(
         test_volume_label_base, base0,
@@ -238,8 +290,8 @@ def main(
     line_coef = 1.2 * (get_edge_mask(test_volume_label_new).sum()) / (test_volume_label_new.sum() + 1e-8)
     if main_proc:
         print("line_coef:", float(line_coef), flush=True)
-
-    feature_volume = feature_volume_generation(volume, thickness=2)
+    feature_path = os.path.join(base_folder, mask_name)
+    feature_volume = get_or_build_feature_volume(volume, feature_path, thickness=2)
     D,F,H,W=feature_volume.shape
 
     # ========= Model =========
@@ -249,7 +301,7 @@ def main(
         base_model = setup_model(
             MultiKernelUNet,
             model_args={"in_channels": F, "out_channels": 2},
-            checkpoint_folder=mask_name,
+            checkpoint_folder=folder_name,
             model_name=f"model_{interation_idx-1}.pt",
             device=device,
             rank=rank,
@@ -271,43 +323,44 @@ def main(
 
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
+    dataset = ValidPatchSliceDataset(
+        volume=volume, mask_volume=test_volume_label_new, feature_volume=feature_volume,
+        negative_volume_label=nega_test_volume_label, softnega=softnega,
+        patch_size=patchsize,
+        threshold=negative_threshold,
+        num_samples=num_samples,
+        thickness=thickness
+    )
+
+    num_workers = max(1, 4 // max(world_size, 1))
+    if world_size > 1:
+        sampler = DistributedSampler(
+            dataset,
+            num_replicas=world_size,
+            rank=rank,
+            shuffle=True,
+            drop_last=True
+        )
+    else:
+        sampler = None
+
+    loader = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        sampler=sampler,
+        shuffle=(sampler is None),
+        drop_last=True,
+        num_workers=num_workers,
+        pin_memory=True,
+        persistent_workers=True  # 🔥 关键！
+    )
 
     # ========= Train =========
     for epoch in range(repeated_epoch):
         model.train()
 
-        # 你现在的 dataset 每 epoch 重建一次（保持最小改动）
-        dataset = ValidPatchSliceDataset(
-            volume = volume, mask_volume = test_volume_label_new,feature_volume = feature_volume,negative_volume_label = nega_test_volume_label,softnega= softnega,
-            patch_size=patchsize,
-            threshold=negative_threshold,
-            num_samples=num_samples,
-            thickness=thickness
-        )
-
-        if world_size > 1:
-            sampler = DistributedSampler(
-                dataset, num_replicas=world_size, rank=rank,
-                shuffle=True, drop_last=True
-            )
+        if sampler is not None:
             sampler.set_epoch(epoch)
-            shuffle = False
-        else:
-            sampler = None
-            shuffle = True
-
-        # worker 数量：避免 world_size 倍增过多
-        num_workers = max(1, 4 // max(world_size, 1))
-
-        loader = DataLoader(
-            dataset,
-            batch_size=batch_size,
-            sampler=sampler,
-            shuffle=shuffle,
-            drop_last=True,
-            num_workers=num_workers,
-            pin_memory=True,
-        )
 
         total_loss = 0.0
         batch_count = 0
@@ -352,10 +405,10 @@ def main(
     if main_proc:
         msk_threshold = 0.9
 
-        edge_vol, edge_Line = infer_volume_edges_whole(feature_volume, net, thickness=thickness)
+        edge_vol, edge_Line = infer_volume_edges_patchwise(feature_volume, net, thickness=thickness)
 
-        if not os.path.exists(mask_name):
-            os.makedirs(mask_name, exist_ok=True)
+        if not os.path.exists(folder_name):
+            os.makedirs(folder_name, exist_ok=True)
 
 
 
@@ -398,14 +451,14 @@ def main(
         # outputs
         save_volume_with_masks_as_rgb_tiff(
             volume, edge_vol, base0,
-            f"{mask_name}/volume_mask_pred_{interation_idx}.tiff"
+            f"{folder_name}/volume_mask_pred_{interation_idx}.tiff"
         )
-        tiff.imwrite(f'{mask_name}/edge_mask_{interation_idx}.tif', edge_volume)
-        tiff.imwrite(f"{mask_name}/{mask_name}_{interation_idx}.tif", test_volume_label_shape)
-        tiff.imwrite(f"{mask_name}/{mask_name}_{interation_idx}_base.tif", test_volume_label_save_u8)
+        # tiff.imwrite(f'{folder_name}/edge_mask_{interation_idx}.tif', edge_volume)
+        # tiff.imwrite(f"{folder_name}/{mask_name}_{interation_idx}.tif", test_volume_label_shape)
+        tiff.imwrite(f"{folder_name}/{mask_name}_{interation_idx}_base.tif", test_volume_label_save_u8)
 
         # 保存模型：只保存真实 net（不是 DDP wrapper）
-        save_model(net, f"{mask_name}/model_{interation_idx}.pt")
+        save_model(net, f"{folder_name}/model_{interation_idx}.pt")
 
         print("[DONE] rank0 saved outputs.", flush=True)
 
@@ -424,6 +477,7 @@ if __name__ == "__main__":
     parser.add_argument("--patch_scale", type=int, default=140)
     parser.add_argument("--raw_name", type=str, default="jurkat_em_s3")
     parser.add_argument("--mask_name", type=str, default="label_jurkat_er_30")
+    parser.add_argument("--folder_name", type=str, default="label_jurkat_er_30")
     parser.add_argument("--area_coef", type=float, default=1.0)
     parser.add_argument("--edge_coef", type=float, default=0.5)
     parser.add_argument("--iou_thresh", type=float, default=0.6)
@@ -441,6 +495,7 @@ if __name__ == "__main__":
         patch_scale=args.patch_scale,
         raw_name=args.raw_name,
         mask_name=args.mask_name,
+        folder_name=args.folder_name,
         area_coef=args.area_coef,
         edge_coef=args.edge_coef,
         iou_thresh=args.iou_thresh,

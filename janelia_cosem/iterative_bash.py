@@ -13,6 +13,8 @@ def parse_args():
                         help="raw volume name, e.g. 11419_raw")
     parser.add_argument("--mask_name", type=str, required=True,
                         help="mask name, e.g. 11419_mito_mask")
+    parser.add_argument("--folder_name", type=str, required=True,
+                        help="folder name, e.g. 11419_mito_mask")
 
     # ===== numeric parameters =====
     parser.add_argument("--z_threshold", type=int, default=10)
@@ -44,6 +46,7 @@ def main_iterative():
             patch_scale=args.patch_scale,
             raw_name=args.raw_name,
             mask_name=args.mask_name,
+            folder_name=args.folder_name,
             area_coef=args.area_coef,
             edge_coef=args.edge_coef,
             iou_thresh=args.iou_thresh,

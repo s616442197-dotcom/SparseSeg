@@ -12,46 +12,113 @@ from torch.utils.data import Dataset, DataLoader,RandomSampler
 from scipy import ndimage
 def projection_by_mean_diff_volume(input_img, target, negative, eps=1e-8):
     """
-    input_img : (D,F,H,W)
-    target    : (D,H,W) {0,1}
-    negative  : (D,H,W) {0,1}
+    input_img: zarr.Array or numpy or torch
+               shape = (D, F, H, W)
+               chunks = (1, F, 256, 256)
 
-    return
-    ------
-    project_img : (D,H,W)   normalized to 0~1
-    w           : (F,)
+    return:
+        project_img: torch.Tensor (D,H,W)
+        w: torch.Tensor (F,)
     """
+
+    # =========================
+    # 0️⃣ 判断类型
+    # =========================
+    is_zarr = not isinstance(input_img, (np.ndarray, torch.Tensor))
+
+    if isinstance(input_img, np.ndarray):
+        input_img = torch.from_numpy(input_img)
 
     D, F, H, W = input_img.shape
 
-    # ---- reshape features ----
-    X = input_img.permute(0,2,3,1).reshape(-1, F)  # (N,F)
+    # =========================
+    # 1️⃣ μ_pos / μ_neg（稀疏 + zarr友好）
+    # =========================
+    mu_pos = torch.zeros(F, dtype=torch.float32)
+    mu_neg = torch.zeros(F, dtype=torch.float32)
 
-    pos_mask = target.reshape(-1) > 0
-    neg_mask = negative.reshape(-1) > 0
+    count_pos = 0
+    count_neg = 0
 
-    if pos_mask.sum() == 0 or neg_mask.sum() == 0:
+    for z in range(D):
+
+        # ---- mask ----
+        t = target[z]
+        n = negative[z]
+
+        t_np = t if isinstance(t, np.ndarray) else t.cpu().numpy()
+        n_np = n if isinstance(n, np.ndarray) else n.cpu().numpy()
+
+        pos_idx = np.argwhere(t_np > 0)
+        neg_idx = np.argwhere(n_np > 0)
+
+        if len(pos_idx) == 0 and len(neg_idx) == 0:
+            continue
+
+        # ---- feature slice（zarr按chunk读取）----
+        feat = input_img[z]   # (F,H,W)
+
+        if not isinstance(feat, torch.Tensor):
+            feat = torch.from_numpy(feat)
+
+        feat = feat.float()
+
+        # ---- pos ----
+        if len(pos_idx) > 0:
+            xs = pos_idx[:, 0]
+            ys = pos_idx[:, 1]
+
+            vals = feat[:, xs, ys]   # (F, N)
+            mu_pos += vals.sum(dim=1)
+            count_pos += vals.shape[1]
+
+        # ---- neg ----
+        if len(neg_idx) > 0:
+            xs = neg_idx[:, 0]
+            ys = neg_idx[:, 1]
+
+            vals = feat[:, xs, ys]
+            mu_neg += vals.sum(dim=1)
+            count_neg += vals.shape[1]
+
+    if count_pos == 0 or count_neg == 0:
         raise ValueError("target 或 negative 没有正样本")
 
-    # ---- 均值向量 ----
-    mu_pos = X[pos_mask].mean(0)
-    mu_neg = X[neg_mask].mean(0)
+    mu_pos /= count_pos
+    mu_neg /= count_neg
 
-    # ---- projection direction ----
+    # =========================
+    # 2️⃣ projection direction
+    # =========================
     w = mu_pos - mu_neg
     w = w / (w.norm() + eps)
 
-    # ---- 投影 ----
-    project_img = (input_img * w.view(1, F, 1, 1)).sum(dim=1)  # (D,H,W)
+    # =========================
+    # 3️⃣ projection（逐 slice）
+    # =========================
+    project_img = torch.zeros((D, H, W), dtype=torch.float32)
 
-    # ---- normalize to 0~1 ----
+    for z in range(D):
+
+        feat = input_img[z]
+
+        if not isinstance(feat, torch.Tensor):
+            feat = torch.from_numpy(feat)
+
+        feat = feat.float()
+
+        # (F,H,W) · (F,1,1)
+        project_img[z] = (feat * w.view(F,1,1)).sum(dim=0)
+
+    # =========================
+    # 4️⃣ normalize
+    # =========================
     min_v = project_img.min()
     max_v = project_img.max()
 
     project_img = (project_img - min_v) / (max_v - min_v + eps)
 
     return project_img, w
-
 def get_edge_mask(mask, edge_width=1):
     """
     计算 mask 的 XY 平面边界区域：仅在平面内膨胀和腐蚀（不跨 Z）。
@@ -304,7 +371,7 @@ class ValidPatchSliceDataset(Dataset):
         self.mask_volume = torch.as_tensor(mask_volume).float()
         self.negative_mask_volume = torch.as_tensor(negative_volume_label).float()
         self.softnega = torch.as_tensor(softnega).float()
-        self.feature = torch.as_tensor(feature_volume).float()
+        self.feature = feature_volume
 
         D,H,W = self.volume.shape
         ph,pw = patch_size
@@ -363,13 +430,17 @@ class ValidPatchSliceDataset(Dataset):
             raise ValueError("❌ 没有合法采样点")
 
         # ---------- 均匀采样 ----------
-        idx = torch.linspace(
-            0,len(valid)-1,
-            steps=num_samples
-        ).long()
+        # idx = torch.linspace(
+        #     0,len(valid)-1,
+        #     steps=num_samples
+        # ).long()
+        #
+        # idx = idx[torch.randperm(len(idx))]
+        # sampled = valid[idx[:num_samples]]
 
+        idx = torch.arange(num_samples) * len(valid) // num_samples
         idx = idx[torch.randperm(len(idx))]
-        sampled = valid[idx[:num_samples]]
+        sampled = valid[idx]
 
         # ---------- patch 左上角 ----------
         z = sampled[:,0]
@@ -388,7 +459,9 @@ class ValidPatchSliceDataset(Dataset):
     def __getitem__(self,idx):
 
         z,x,y = self.samples[idx]
-
+        z = int(z.item()) if torch.is_tensor(z) else int(z)
+        x = int(x.item()) if torch.is_tensor(x) else int(x)
+        y = int(y.item()) if torch.is_tensor(y) else int(y)
         ph,pw = self.patch_size
 
         # ---------- image ----------
@@ -399,13 +472,20 @@ class ValidPatchSliceDataset(Dataset):
         ]
 
         # ---------- feature ----------
-        feature_patch = self.feature[
+        # feature_patch = self.feature[
+        #     z,
+        #     :,
+        #     x:x+ph,
+        #     y:y+pw
+        # ]
+        feature_patch = torch.from_numpy(
+            self.feature[
             z,
             :,
-            x:x+ph,
-            y:y+pw
-        ]
-
+            x:x + ph,
+            y:y + pw
+            ]
+        ).float()
         # ---------- mask ----------
         mask_patch = self.mask_volume[
             z:z+1,

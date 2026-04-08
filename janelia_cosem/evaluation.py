@@ -13,8 +13,8 @@ from utils import compute_metrics
 # 2. 预测 mask 列表
 # ------------------------------
 pred_root_list = [30,50,70,80,95]
-
-pred_filename = "volume_mask_pred_2.tiff"
+pred_root_list = [30,50,80]
+pred_filename = "volume_mask_pred_5.tiff"
 
 # ------------------------------
 # 3. 计算 IoU 和 FPR 的函数
@@ -32,16 +32,16 @@ fpr_star_list = []
 iou_ilastik_list = []
 fpr_ilastik_list = []
 labels = []
-threshold=255*0.3
+threshold=255*0.5
 celltype='hela2'
-# celltype='jurkat'
+celltype='jurkat'
 # celltype='macrophage'
 organelletype='golgi'
 organelletype='er'
 organelletype='endo'
 organelletype='lyso'
 
-# organelletype='mito'
+organelletype='mito'
 
 gt_path = f"/mnt/d/vem_data/download/{celltype}_{organelletype}_s3.tif"
 gt = tiff.imread(gt_path)

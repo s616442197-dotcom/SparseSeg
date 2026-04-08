@@ -14,9 +14,9 @@ mask_name='10442_mito_mask'
 mask_name='11415_mitomask'
 mask_name='11416_mitomask'
 mask_name='11417_mito_mask'
-mask_name='11419_mito_mask'
-mask_name='10311_mito_mask'
-mask_name='main_control_mitomask'
+mask_name='11419_mito_mask_new'
+# mask_name='10311_mito_mask'
+# mask_name='main_control_mitomask'
 # mask_name='main_patient_mitomask'
 # mask_name='11420_heart_mask'
 
@@ -36,7 +36,7 @@ level=1.0
 basedir=f'{mask_name}'
 basedir=f'/mnt/d/vem_data/{mask_name}'
 
-vol00 = tiff.imread(f'{basedir}/volume_mask_pred_2.tiff')
+vol00 = tiff.imread(f'{basedir}/volume_mask_pred_5.tiff')
 
 output_z=500
 import numpy as np
