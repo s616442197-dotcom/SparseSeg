@@ -320,8 +320,6 @@ def plot_distributions(df, features, title_prefix, show_legend=False):
     plt.show()
 
 
-
-
 plot_distributions(df_3d, features_3d, "3D",show_legend=True)
 plot_distributions(df_2d, features_2d, "2D",show_legend=True)
 

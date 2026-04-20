@@ -431,3 +431,4 @@ def infer_volume_edges_patchwise(
 #     blurred = gaussian_filter(pred_volume, sigma=(1, 3, 3), mode="reflect")
 #
 #     return blurred, edge_volume
+

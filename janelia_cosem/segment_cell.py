@@ -202,6 +202,45 @@ def ddp_cleanup():
 
 def is_main_process(rank: int) -> bool:
     return rank == 0
+def predict_packed(
+    model_path,
+    feature_volume,
+    device="cuda",
+    thickness=2
+):
+    """
+    输入:
+        model_path: 训练好的模型路径 (.pt)
+        raw_name: 原始数据名（不带.tif）
+
+    输出:
+        edge_vol: 预测的 edge volume
+    """
+
+    # ======================
+    # 1️⃣ 读取 raw volume
+    # ======================
+    D, F, H, W = feature_volume.shape
+
+    # ======================
+    # 3️⃣ 加载模型
+    # ======================
+    model = MultiKernelUNet(in_channels=F, out_channels=2)
+    model.load_state_dict(torch.load(model_path, map_location=device))
+    model.to(device)
+    model.eval()
+
+    # ======================
+    # 4️⃣ 推理
+    # ======================
+    with torch.no_grad():
+        edge_vol, edge_line = infer_volume_edges_patchwise(
+            feature_volume,
+            model,
+            thickness=thickness
+        )
+
+    return edge_vol
 
 def main(
     interation_idx=0,
@@ -290,7 +329,7 @@ def main(
     line_coef = 1.2 * (get_edge_mask(test_volume_label_new).sum()) / (test_volume_label_new.sum() + 1e-8)
     if main_proc:
         print("line_coef:", float(line_coef), flush=True)
-    feature_path = os.path.join(base_folder, mask_name)
+    feature_path = os.path.join(base_folder, raw_name)
     feature_volume = get_or_build_feature_volume(volume, feature_path, thickness=2)
     D,F,H,W=feature_volume.shape
 
