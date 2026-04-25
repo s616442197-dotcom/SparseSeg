@@ -402,7 +402,6 @@ def filter_connected_regions_shape(
 
         # Euler 数：连通成分数 - 孔洞数（可以体现孔洞多不多）
         euler = float(p.euler_number)
-
         # 如果你希望“形状不含尺寸信息”，可以不放 area；
         # 如果也希望考虑大小，可以加一个 log 尺寸特征：
         log_area = np.log1p(area)  # 这个是尺寸相关的特征，可选
@@ -458,7 +457,7 @@ def filter_connected_regions_shape(
         # -------------------------
         error = np.abs(vec[None, :] - mask_feats) / (np.abs(mask_feats) + eps)
 
-        cond1 = np.any(np.all(error < threshold, axis=1))
+        cond1 = np.any(np.all(error <= threshold, axis=1))
 
         # -------------------------
         # 条件 2：靠近整体统计范围
@@ -488,12 +487,12 @@ def filter_connected_regions_shape(
             vec = get_shape_vec(p)
             mask_feats.append(vec)
             mask_sizes.append(p.area)
-
+    # print(len(mask_feats))
     if len(mask_feats) == 0:
         return np.zeros_like(test_volume_label)
     mask_feats = np.stack(mask_feats)
-    min_feat = mask_feats.min(axis=0)  # [D]
-    max_feat = mask_feats.max(axis=0)  # [D]
+    # min_feat = mask_feats.min(axis=0)  # [D]
+    # max_feat = mask_feats.max(axis=0)  # [D]
     min_size_v2, max_size_v2 = np.min(mask_sizes), np.max(mask_sizes)
     # print(np.shape(mask_feats))
     # === 3️⃣ 遍历 test_volume_label 每层 ===
@@ -504,13 +503,16 @@ def filter_connected_regions_shape(
             # if p.area < 10:
             #     continue
             if p.euler_number != 1:
+                # print('euler mismatch')
                 continue
             # 面积过滤
             if p.area < min_size_v2 * min_ratio or p.area > max_size_v2 / min_ratio:
+                # print('area mismatch')
                 continue
 
             vec = get_shape_vec(p)
             if np.all(vec == 0):
+                # print('none vec')
                 continue
 
             # vec = vec

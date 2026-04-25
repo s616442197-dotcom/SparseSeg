@@ -273,11 +273,11 @@ def main(
     if main_proc:
         print("=" * 70, flush=True)
         print(f"[DDP] world_size         = {world_size}", flush=True)
-        print(f"[DDP] rank/local_rank   = {rank}/{local_rank}", flush=True)
+        print(f"[DDP] rank/local_rank    = {rank}/{local_rank}", flush=True)
         print(f"[INFO] interation_idx    = {interation_idx}", flush=True)
         print(f"[INFO] raw_name          = {raw_name}", flush=True)
         print(f"[INFO] mask_name         = {mask_name}", flush=True)
-        print(f"[INFO] folder_name         = {folder_name}", flush=True)
+        print(f"[INFO] folder_name       = {folder_name}", flush=True)
         print(f"[INFO] patch_scale       = {patch_scale}", flush=True)
         print(f"[INFO] z_threshold       = {z_threshold}", flush=True)
         print(f"[INFO] iou_thresh        = {iou_thresh}", flush=True)
@@ -454,8 +454,7 @@ def main(
         thresh_value = np.percentile(edge_vol, 100 * msk_threshold)
 
         if filer_method == 0:
-            edge_area = get_edge_region(edge_Line)
-            vol010 = ((edge_vol >= max(thresh_value, 0.5)) & (edge_area > 0.5)).astype(np.uint8)
+            vol010 = (edge_vol >= max(thresh_value, 0.2)).astype(np.uint8)
         elif filer_method == 1:
             edge_area = get_edge_region(edge_Line)
             vol010 = intersect_regions((edge_area > 0.5), (edge_vol >= max(thresh_value, 0.5)), overlap_ratio=0.01)
@@ -466,11 +465,11 @@ def main(
                 vol010[z] = binary_fill_holes(vol010[z]).astype(np.uint8)
 
         vol01 = vol010.astype(np.uint8)
-
+        print(np.sum(vol01))
         test_volume_label_shape = filter_connected_regions_shape(
             vol01, base0, threshold=threshold, min_ratio=1.0, max_height=z_threshold
         )
-
+        print(np.sum(test_volume_label_shape))
         edge_volume = fill_edge_volume_by_region((edge_Line > 0.5),min_size=5, max_ratio=3.0)
         # test_volume_label_edge = filter_connected_regions_shape(
         #     edge_volume, base0, threshold=threshold, min_ratio=1.0, max_height=z_threshold
