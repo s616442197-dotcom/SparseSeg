@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.ndimage import label
-
-from scipy.ndimage import label, binary_erosion
+import random
+from scipy.ndimage import label, binary_erosion,center_of_mass
 
 def uniform_connected_labels(volume, num_bins=10, erosion_size=2):
     """
@@ -143,8 +143,11 @@ def randomly_remove_regions_by_z(
         z_indices = np.unique(np.where(label_vol == lb)[0])
         if len(z_indices) <= 1:
             continue
+        if z_remove_ratio>=1:
+            n_z_remove = max(0, len(z_indices) - 10)
 
-        n_z_remove = max(1, int(len(z_indices) * z_remove_ratio))
+        else:
+            n_z_remove = max(1, int(len(z_indices) * z_remove_ratio))
         removed_z = np.random.choice(z_indices, n_z_remove, replace=False)
 
         for z in removed_z:
@@ -162,26 +165,29 @@ def randomly_remove_regions_by_z(
 
 
 import tifffile
-remove_ratio_list=[30,50,70,80,95]
-
+# remove_ratio_list=[30,50,70,80,95]
+remove_ratio_list=[100,101,102,103,104]
 cell_type='hela2'
 # cell_type='jurkat'
 # cell_type='macrophage'
 
-type='golgi'
-type='lyso'
+# type='golgi'
+# type='lyso'
 # type='nucleus'
 # type='endo'
 # type='er'
-# type='mito'
+type='mito'
 # type='cent'
 
+limit_extreme=True
+numSelect=1
+
 for remove_ratio in remove_ratio_list:
-    vol = tifffile.imread(f"download/{cell_type}_{type}_s3.tif")
+    vol = tifffile.imread(f"inputdata/{cell_type}_{type}_s3.tif")
     label_vol, qvals, current_label = uniform_connected_labels(vol, num_bins=8)
     # tifffile.imwrite(f"download/label_{cell_type}_{type}_full.tif", label_vol)
-    if current_label <500:
-        label_sparse, removed = randomly_remove_regions_by_z(label_vol, z_remove_ratio=remove_ratio/100, seed=42)
+    if current_label <50000:
+        label_sparse, removed = randomly_remove_regions_by_z(label_vol, z_remove_ratio=remove_ratio/100)
     else:
         label_sparse, removed = randomly_remove_regions(
             label_vol,
@@ -189,13 +195,62 @@ for remove_ratio in remove_ratio_list:
             seed=42
         )
 
-    tifffile.imwrite(f"download/label_{cell_type}_{type}_volume_{remove_ratio}.tif", label_sparse.astype(np.uint16))
+    if limit_extreme:
+        label_binary = (label_sparse > 0).astype(np.uint8)
+
+        D, H, W = label_binary.shape
+
+        z0, z1 = int(0.1 * D), int(0.9 * D)
+        y0, y1 = int(0.1 * H), int(0.9 * H)
+        x0, x1 = int(0.1 * W), int(0.9 * W)
+
+        label_center = np.zeros_like(label_binary)
+        label_center[z0:z1, y0:y1, x0:x1] = label_binary[z0:z1, y0:y1, x0:x1]
+
+        # 收集所有 2D 连通区域: (z, old_id, labeled_2d)
+        regions = []
+
+        for z in range(z0, z1):
+            cc_z, num_cc_z = label(label_center[z])
+
+            if num_cc_z == 0:
+                continue
+
+            areas = np.bincount(cc_z.ravel())
+
+            valid_ids = np.where(areas > 80)[0]
+            valid_ids = valid_ids[valid_ids != 0]
+
+            for old_id in valid_ids:
+                regions.append((z, old_id, cc_z))
+
+        n_select = min(numSelect, len(regions))
+
+        if n_select > 0:
+            selected_idx = np.random.choice(
+                len(regions),
+                size=n_select,
+                replace=False
+            )
+        else:
+            selected_idx = []
+
+        label_out = np.zeros_like(label_sparse, dtype=np.uint16)
+
+        for new_idx, ridx in enumerate(selected_idx, start=1):
+            z, old_id, cc_z = regions[ridx]
+            label_out[z][cc_z == old_id] = new_idx
+    else:
+        label_out = label_sparse
+
+    tifffile.imwrite(f"inputdata/label_{cell_type}_{type}_volume_{remove_ratio}_{numSelect}.tif", label_out.astype(np.uint16))
     print("保存完成，适用于 StarDist 训练。")
 
     structure = np.ones((3, 3, 3), dtype=np.uint8)  # 可调整腐蚀核大小
     eroded = binary_erosion(label_sparse > 0, structure=structure, iterations=0)
 
-    label_binary = (label_sparse > 0).astype(np.uint8)  # 二值化：大于0的为1
+    label_binary = (label_out > 0).astype(np.uint8)  # 二值化：大于0的为1
 
-    tifffile.imwrite(f"download/label_{cell_type}_{type}_{remove_ratio}.tif", label_binary)
+
+    tifffile.imwrite(f"inputdata/label_{cell_type}_{type}_{remove_ratio}_{numSelect}.tif", label_binary)
     print("✅ label_volume2.tif 保存完成。")

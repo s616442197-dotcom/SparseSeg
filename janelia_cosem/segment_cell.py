@@ -24,10 +24,39 @@ from torch.utils.data import Dataset, DataLoader,RandomSampler
 from datetime import datetime
 from scipy import ndimage
 from munet_dataset import get_edge_mask, ValidPatchSliceDataset
-from MUNET_model import MultiKernelUNet
+from MUNET_model import MultiKernelUNet,SimpleViTSeg
 from prediction_func import infer_volume_edges_whole,feature_volume_generation,infer_volume_edges_patchwise
 from get_inputfeature_new import extract_stack_features
+from functools import lru_cache
 
+
+@lru_cache(maxsize=4)
+def load_feature_volume_cached(feature_path, preload=True):
+    """
+    读取已有 zarr feature，并缓存到内存中。
+    同一个 feature_path 第二次调用时不会重复读取。
+
+    返回:
+        preload=True  -> numpy array, shape (D,F,H,W)
+        preload=False -> zarr array handle
+    """
+    feature_path = os.path.abspath(feature_path)
+
+    print(f"✅ Loading feature from: {feature_path}")
+    z = zarr.open(feature_path, mode="r")
+
+    print("feature shape:", z.shape)
+    print("feature chunks:", z.chunks)
+    print("feature dtype:", z.dtype)
+
+    if preload:
+        nbytes = np.prod(z.shape) * np.dtype(z.dtype).itemsize
+        print(f"feature size: {nbytes / 1024**3:.2f} GB")
+        print("⏳ Preloading feature into RAM...")
+        z = np.asarray(z, dtype=np.float32)
+        print("✅ Preloaded:", z.shape, z.dtype)
+
+    return z
 def get_or_build_feature_volume(volume, feature_path, thickness=2):
     """
     feature_path: xxx.zarr
@@ -43,9 +72,8 @@ def get_or_build_feature_volume(volume, feature_path, thickness=2):
     # 1️⃣ 已存在 → 直接打开
     # =========================
     if os.path.exists(feature_path):
-        print("✅ 使用已有 Zarr feature")
-        z = zarr.open(feature_path, mode='r')
-        return z
+        print("✅ 使用已有 Zarr feature / cache")
+        return load_feature_volume_cached(feature_path, preload=True)
 
     # =========================
     # 2️⃣ 创建 Zarr
@@ -263,6 +291,9 @@ def main(
     num_samples=1000,
     thickness=2,
     base_folder="inputdata",
+    kernel_sizes=(3,5,7),
+    Loss_list=[10,0.1,0.1,0.01],
+    if_Vit=False,
 ):
     # ========= DDP init =========
     rank, world_size, local_rank, device = ddp_setup()
@@ -273,11 +304,11 @@ def main(
     if main_proc:
         print("=" * 70, flush=True)
         print(f"[DDP] world_size         = {world_size}", flush=True)
-        print(f"[DDP] rank/local_rank   = {rank}/{local_rank}", flush=True)
+        print(f"[DDP] rank/local_rank    = {rank}/{local_rank}", flush=True)
         print(f"[INFO] interation_idx    = {interation_idx}", flush=True)
         print(f"[INFO] raw_name          = {raw_name}", flush=True)
         print(f"[INFO] mask_name         = {mask_name}", flush=True)
-        print(f"[INFO] folder_name         = {folder_name}", flush=True)
+        print(f"[INFO] folder_name       = {folder_name}", flush=True)
         print(f"[INFO] patch_scale       = {patch_scale}", flush=True)
         print(f"[INFO] z_threshold       = {z_threshold}", flush=True)
         print(f"[INFO] iou_thresh        = {iou_thresh}", flush=True)
@@ -292,22 +323,26 @@ def main(
     vol0 = tiff.imread(os.path.join(base_folder, f"{raw_name}.tif"))
     volume = local_contrast_normalize(vol0)
 
+    mask_thd=0.5
+
     base0 = tiff.imread(os.path.join(base_folder, f"{mask_name}.tif"))
-    base0 = (base0 > 0).astype(np.uint8)
+    base0 = (base0 > mask_thd).astype(np.uint8)
 
     if interation_idx == 0:
         test_volume_label = tiff.imread(os.path.join(base_folder, f"{mask_name}.tif"))
-        test_volume_label_base = (test_volume_label > 0).astype(np.uint8)
+        test_volume_label_base = (test_volume_label > mask_thd).astype(np.uint8)
     else:
-        test_volume_label_base = tiff.imread(f"{folder_name}/{mask_name}_{interation_idx-1}_base.tif")
-        test_volume_label_base = (test_volume_label_base > 0).astype(np.uint8)
+        # test_volume_label_base = tiff.imread(f"{folder_name}/{mask_name}_{interation_idx-1}_base.tif")
+        test_volume_label_base = tiff.imread(f"{folder_name}/{mask_name}_new_base.tif")
+        test_volume_label_base = (test_volume_label_base > mask_thd).astype(np.uint8)
         # test_volume_label = tiff.imread(f"{folder_name}/{mask_name}_{interation_idx-1}.tif")
 
-    test_volume_label_new = filter_connected_regions_shape(
-        test_volume_label_base, base0,
-        threshold=threshold, min_ratio=0.8, max_height=z_threshold
-    )
-    test_volume_label_new[base0 > 0] = 1
+    # test_volume_label_new = filter_connected_regions_shape(
+    #     test_volume_label_base, base0,
+    #     threshold=threshold, min_ratio=0.8, max_height=z_threshold
+    # )
+    # test_volume_label_new[base0 > mask_thd] = 1
+    test_volume_label_new = test_volume_label_base
 
     # negative
     mask_path = os.path.join(base_folder, f"negative_{mask_name}.tif")
@@ -322,7 +357,7 @@ def main(
         else:
             nega_test_volume_label = np.zeros_like(test_volume_label_base, dtype=np.uint8)
 
-    nega_test_volume_label = (nega_test_volume_label > 0).astype(np.uint8)
+    nega_test_volume_label = (nega_test_volume_label > mask_thd).astype(np.uint8)
 
     softnega = build_distance_mask(test_volume_label_base, R=low_weight_coeff)
 
@@ -334,17 +369,30 @@ def main(
     D,F,H,W=feature_volume.shape
 
     # ========= Model =========
-    if interation_idx == 0:
-        base_model = MultiKernelUNet(in_channels=F, out_channels=2).to(device)
+    if if_Vit:
+        if interation_idx == 0:
+            base_model = SimpleViTSeg(in_channels=F, out_channels=2,kernel_sizes=kernel_sizes).to(device)
+        else:
+            base_model = setup_model(
+                SimpleViTSeg,
+                model_args={"in_channels": F, "out_channels": 2, "kernel_sizes": kernel_sizes},
+                checkpoint_folder=folder_name,
+                model_name=f"model_{interation_idx - 1}.pt",
+                device=device,
+                rank=rank,
+            )
     else:
-        base_model = setup_model(
-            MultiKernelUNet,
-            model_args={"in_channels": F, "out_channels": 2},
-            checkpoint_folder=folder_name,
-            model_name=f"model_{interation_idx-1}.pt",
-            device=device,
-            rank=rank,
-        )
+        if interation_idx == 0:
+            base_model = MultiKernelUNet(in_channels=F, out_channels=2,kernel_sizes=kernel_sizes).to(device)
+        else:
+            base_model = setup_model(
+                MultiKernelUNet,
+                model_args={"in_channels": F, "out_channels": 2,"kernel_sizes":kernel_sizes},
+                checkpoint_folder=folder_name,
+                model_name=f"model_{interation_idx-1}.pt",
+                device=device,
+                rank=rank,
+            )
 
     # DDP wrap（仅 world_size>1）
     if world_size > 1:
@@ -421,7 +469,11 @@ def main(
                 thickness=thickness,
                 area_coef=area_coef,
                 edge_coef=edge_coef,
-                sparsity_weight=sparsity_weight,
+                bce_weight=Loss_list[0],
+                corr_weight=Loss_list[1],
+                smooth_weight=Loss_list[2],
+                sparsity_weight=Loss_list[3],
+
             )
 
             optimizer.zero_grad(set_to_none=True)
@@ -442,36 +494,38 @@ def main(
         dist.barrier()
 
     if main_proc:
-        msk_threshold = 0.9
+        msk_threshold = 0.99
 
-        edge_vol, edge_Line = infer_volume_edges_patchwise(feature_volume, net, thickness=thickness)
+        edge_vol, edge_Line = infer_volume_edges_patchwise(feature_volume, net, thickness=thickness,patch_size=patch_scale)
 
         if not os.path.exists(folder_name):
             os.makedirs(folder_name, exist_ok=True)
 
-
-
         thresh_value = np.percentile(edge_vol, 100 * msk_threshold)
 
         if filer_method == 0:
-            edge_area = get_edge_region(edge_Line)
-            vol010 = ((edge_vol >= max(thresh_value, 0.5)) & (edge_area > 0.5)).astype(np.uint8)
+            vol010 = (edge_vol >= min(thresh_value, 0.5)).astype(np.uint8)
         elif filer_method == 1:
             edge_area = get_edge_region(edge_Line)
             vol010 = intersect_regions((edge_area > 0.5), (edge_vol >= max(thresh_value, 0.5)), overlap_ratio=0.01)
             vol010 = vol010.astype(np.uint8)
         else:
-            vol010 = (edge_vol >= max(thresh_value, 0.5)).astype(np.uint8)
+            vol010 = (edge_vol >= min(thresh_value, 0.5)).astype(np.uint8)
             for z in range(vol010.shape[0]):
                 vol010[z] = binary_fill_holes(vol010[z]).astype(np.uint8)
 
         vol01 = vol010.astype(np.uint8)
+        vol01[nega_test_volume_label > mask_thd] = 0
 
+        # test_volume_label_shape = filter_connected_regions_shape(
+        #     vol01, base0, threshold=threshold, min_ratio=1.0, max_height=z_threshold
+        # )
         test_volume_label_shape = filter_connected_regions_shape(
-            vol01, base0, threshold=threshold, min_ratio=1.0, max_height=z_threshold
+            vol01, test_volume_label_base, threshold=threshold, min_ratio=1.0, max_height=z_threshold
         )
 
         edge_volume = fill_edge_volume_by_region((edge_Line > 0.5),min_size=5, max_ratio=3.0)
+        # edge_volume = (edge_Line > 0.5)
         # test_volume_label_edge = filter_connected_regions_shape(
         #     edge_volume, base0, threshold=threshold, min_ratio=1.0, max_height=z_threshold
         # )
@@ -484,17 +538,20 @@ def main(
 
         test_volume_label_save = 1.0 * test_volume_label_new2 + test_volume_label_base
         test_volume_label_save = np.clip(test_volume_label_save, 0, 1.0)
-        test_volume_label_save[nega_test_volume_label > 0] = 0
+        test_volume_label_save[nega_test_volume_label > mask_thd] = 0
         test_volume_label_save_u8 = test_volume_label_save.astype(np.uint8)
 
         # outputs
-        save_volume_with_masks_as_rgb_tiff(
-            volume, edge_vol, base0,
-            f"{folder_name}/volume_mask_pred_{interation_idx}.tiff"
-        )
+        if interation_idx >= 3:
+            save_volume_with_masks_as_rgb_tiff(
+                volume, edge_vol, base0,
+                f"{folder_name}/volume_mask_pred.tiff"
+            )
         # tiff.imwrite(f'{folder_name}/edge_mask_{interation_idx}.tif', edge_volume)
         # tiff.imwrite(f"{folder_name}/{mask_name}_{interation_idx}.tif", test_volume_label_shape)
-        tiff.imwrite(f"{folder_name}/{mask_name}_{interation_idx}_base.tif", test_volume_label_save_u8)
+
+        # tiff.imwrite(f"{folder_name}/{mask_name}_{interation_idx}_base.tif", test_volume_label_save_u8)
+        tiff.imwrite(f"{folder_name}/{mask_name}_new_base.tif", test_volume_label_save_u8)
 
         # 保存模型：只保存真实 net（不是 DDP wrapper）
         save_model(net, f"{folder_name}/model_{interation_idx}.pt")
@@ -505,6 +562,7 @@ def main(
         dist.barrier()
 
     ddp_cleanup()
+    del loader, dataset
 
 if __name__ == "__main__":
     import argparse

@@ -8,7 +8,10 @@ from skimage.measure import label, regionprops
 from skimage import measure
 from scipy.stats import mannwhitneyu
 from scipy.ndimage import gaussian_filter, zoom, binary_erosion
-
+import os
+import pandas as pd
+import tifffile as tiff
+from scipy.ndimage import zoom
 
 # =========================
 # 3D 工具函数
@@ -182,41 +185,8 @@ min_volume = {
 #     "macrophage": "label_macrophage_mito_80",
 # }
 
-dfs_3d, dfs_2d = [], []
-
-for group, mask_dir in mask_dirs.items():
-    print(f"Processing {group}")
-
-    vol = tiff.imread(f"{mask_dir}/volume_mask_pred_2.tiff")[:, :, :, 1]/255
-    volume_bin = vol > 0.3
-    volume_z = zoom(
-        vol,
-        zoom=[5,1,1],
-        order=3  # cubic interpolation
-    )
-    volume_z=volume_z>0.3
-    print(f"Processing 3D")
-    df3d = analyze_3d_connected_components(
-        volume_z,
-        min_volume=min_volume[group],
-        connectivity=1
-    )
-    df3d["type"] = group
-    dfs_3d.append(df3d)
-    print(f"Processing 2D")
-    df2d = analyze_2d_connected_components(
-        volume_bin,
-        connectivity=1,
-        min_volume=min_area[group],
-    )
-    df2d["type"] = group
-    dfs_2d.append(df2d)
-
-df_3d = pd.concat(dfs_3d, ignore_index=True)
-df_2d = pd.concat(dfs_2d, ignore_index=True)
-
-df_3d.to_csv("regionprops_3d_control_vs_exp.csv", index=False)
-df_2d.to_csv("regionprops_2d_control_vs_exp.csv", index=False)
+csv_3d_path = "regionprops_3d_control_vs_exp.csv"
+csv_2d_path = "regionprops_2d_control_vs_exp.csv"
 
 features_3d = [
     "volume", "elongation", "bbox_aspect_ratio",
@@ -227,21 +197,328 @@ features_2d = [
     "area", "elongation", "bbox_aspect_ratio",
     "eccentricity", "extent", "solidity"
 ]
+
+# ============================================================
+# 如果已经计算过，就直接读取
+# ============================================================
+if os.path.exists(csv_3d_path) and os.path.exists(csv_2d_path):
+    print("Existing regionprops CSV files found. Loading...")
+    df_3d = pd.read_csv(csv_3d_path)
+    df_2d = pd.read_csv(csv_2d_path)
+
+else:
+    print("Regionprops CSV files not found. Computing...")
+
+    dfs_3d, dfs_2d = [], []
+
+    for group, mask_dir in mask_dirs.items():
+        print(f"Processing {group}")
+
+        mask_path = f"{mask_dir}/volume_mask_pred_2.tiff"
+
+        vol = tiff.imread(mask_path)[:, :, :, 1] / 255.0
+
+        # -----------------------------
+        # 2D binary mask
+        # -----------------------------
+        volume_bin = vol > 0.3
+
+        # -----------------------------
+        # Z-rescaled 3D binary mask
+        # -----------------------------
+        volume_z = zoom(
+            vol,
+            zoom=[5, 1, 1],
+            order=3
+        )
+        volume_z = volume_z > 0.3
+
+        print("Processing 3D")
+        df3d = analyze_3d_connected_components(
+            volume_z,
+            min_volume=min_volume[group],
+            connectivity=1
+        )
+        df3d["type"] = group
+        dfs_3d.append(df3d)
+
+        print("Processing 2D")
+        df2d = analyze_2d_connected_components(
+            volume_bin,
+            connectivity=1,
+            min_volume=min_area[group],
+        )
+        df2d["type"] = group
+        dfs_2d.append(df2d)
+
+    df_3d = pd.concat(dfs_3d, ignore_index=True)
+    df_2d = pd.concat(dfs_2d, ignore_index=True)
+
+    df_3d.to_csv(csv_3d_path, index=False)
+    df_2d.to_csv(csv_2d_path, index=False)
+
+    print(f"Saved: {csv_3d_path}")
+    print(f"Saved: {csv_2d_path}")
 #%%
 
+# import numpy as np
+# import matplotlib.pyplot as plt
+# from itertools import combinations
+# from scipy.stats import pearsonr
+#
+#
+# from itertools import combinations
+# from scipy.stats import pearsonr
+# import numpy as np
+# import matplotlib.pyplot as plt
+#
+#
+# def plot_distributions(df, features, title_prefix, show_legend=False):
+#     plt.rcParams.update({
+#         "font.size": 20,
+#         "axes.titlesize": 20,
+#         "axes.labelsize": 20,
+#         "xtick.labelsize": 14,
+#         "ytick.labelsize": 14,
+#     })
+#
+#     plt.figure(figsize=(21, 12))
+#
+#     groups = df["type"].unique()
+#
+#     for i, feat in enumerate(features):
+#         ax = plt.subplot(2, 3, i + 1)
+#
+#         # -------- collect data per group --------
+#         data_dict = {}
+#         for group in groups:
+#             data = df[df["type"] == group][feat].dropna().values
+#
+#             if feat in ["volume", "area", "elongation", "bbox_aspect_ratio"]:
+#                 data = np.log10(data + 1e-6)
+#
+#             if len(data) > 0:
+#                 data_dict[group] = data
+#
+#         # -------- shared bins --------
+#         all_data = np.concatenate(list(data_dict.values()))
+#         bins = np.histogram_bin_edges(all_data, bins=50)
+#
+#         hist_dict = {}
+#
+#         # -------- plot histograms --------
+#         for group, data in data_dict.items():
+#             hist, _ = np.histogram(data, bins=bins, density=True)
+#             hist_dict[group] = hist
+#
+#             ax.hist(
+#                 data,
+#                 bins=bins,
+#                 alpha=0.4,
+#                 density=True,
+#                 label=group,
+#             )
+#
+#         # -------- compute histogram correlations --------
+#         corrs = []
+#         for g1, g2 in combinations(hist_dict.keys(), 2):
+#             if np.std(hist_dict[g1]) > 0 and np.std(hist_dict[g2]) > 0:
+#                 r, _ = pearsonr(hist_dict[g1], hist_dict[g2])
+#                 corrs.append(r)
+#
+#         # -------- annotate --------
+#         # if len(corrs) > 0:
+#         #     text = (
+#         #         f"mean r = {np.mean(corrs):.2f}\n"
+#         #         f"min = {np.min(corrs):.2f}, max = {np.max(corrs):.2f}"
+#         #     )
+#         #     ax.text(
+#         #         0.92, 0.92,
+#         #         text,
+#         #         transform=ax.transAxes,
+#         #         ha="right",
+#         #         va="top",
+#         #         fontsize=20,
+#         #         bbox=dict(boxstyle="round", fc="white", alpha=0.8),
+#         #     )
+#
+#         ax.set_title(f"{title_prefix} {feat}")
+#
+#         # -------- legend switch --------
+#         if show_legend:
+#             ax.legend()
+#
+#     plt.tight_layout()
+#     plt.show()
+#
+#
+# plot_distributions(df_3d, features_3d, "3D",show_legend=True)
+# plot_distributions(df_2d, features_2d, "2D",show_legend=True)
+#
+# # run_stats(df_3d, features_3d, "3D")
+# # run_stats(df_2d, features_2d, "2D")
+#%%
 import numpy as np
-import matplotlib.pyplot as plt
-from itertools import combinations
-from scipy.stats import pearsonr
-
-
-from itertools import combinations
-from scipy.stats import pearsonr
-import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 
+from scipy.stats import mannwhitneyu, kruskal
+from itertools import combinations
 
-def plot_distributions(df, features, title_prefix, show_legend=False):
+
+def format_p(p):
+    if pd.isna(p):
+        return "NA"
+    if p < 1e-4:
+        return f"{p:.1e}"
+    return f"{p:.4f}"
+
+
+def p_to_star(p):
+    if pd.isna(p):
+        return "NA"
+    if p < 0.001:
+        return "***"
+    elif p < 0.01:
+        return "**"
+    elif p < 0.05:
+        return "*"
+    else:
+        return "ns"
+
+
+def bh_fdr_correction(pvals):
+    pvals = np.asarray(pvals, dtype=float)
+    qvals = np.full_like(pvals, np.nan, dtype=float)
+
+    valid = ~np.isnan(pvals)
+    p = pvals[valid]
+
+    if len(p) == 0:
+        return qvals
+
+    order = np.argsort(p)
+    ranked_p = p[order]
+    n = len(ranked_p)
+
+    ranked_q = ranked_p * n / (np.arange(n) + 1)
+    ranked_q = np.minimum.accumulate(ranked_q[::-1])[::-1]
+    ranked_q = np.clip(ranked_q, 0, 1)
+
+    q = np.empty_like(ranked_q)
+    q[order] = ranked_q
+
+    qvals[valid] = q
+    return qvals
+
+
+def transform_feature(data, feat, log_features=None, eps=1e-6):
+    if log_features is None:
+        log_features = ["volume", "area", "elongation", "bbox_aspect_ratio"]
+
+    data = np.asarray(data, dtype=float)
+    data = data[~np.isnan(data)]
+
+    if feat in log_features:
+        data = data[data + eps > 0]
+        data = np.log10(data + eps)
+
+    return data
+
+
+def compute_object_level_stats(
+    df,
+    features,
+    group_col="type",
+    log_features=None,
+):
+    """
+    Object-level statistics.
+    Each mitochondrion / object is treated as one observation.
+    """
+
+    groups = list(df[group_col].dropna().unique())
+    stats_rows = []
+
+    for feat in features:
+        data_dict = {}
+
+        for group in groups:
+            data = df[df[group_col] == group][feat].dropna().values
+            data = transform_feature(data, feat, log_features=log_features)
+
+            if len(data) > 0:
+                data_dict[group] = data
+
+        if len(data_dict) < 2:
+            stats_rows.append({
+                "feature": feat,
+                "test": "NA",
+                "group_1": None,
+                "group_2": None,
+                "n_1": np.nan,
+                "n_2": np.nan,
+                "median_1": np.nan,
+                "median_2": np.nan,
+                "median_diff": np.nan,
+                "p_value": np.nan,
+            })
+            continue
+
+        # two groups: Mann-Whitney U test
+        if len(data_dict) == 2:
+            g1, g2 = list(data_dict.keys())
+            x = data_dict[g1]
+            y = data_dict[g2]
+
+            stat, p = mannwhitneyu(x, y, alternative="two-sided")
+
+            stats_rows.append({
+                "feature": feat,
+                "test": "Mann-Whitney U",
+                "group_1": g1,
+                "group_2": g2,
+                "n_1": len(x),
+                "n_2": len(y),
+                "median_1": np.median(x),
+                "median_2": np.median(y),
+                "median_diff": np.median(x) - np.median(y),
+                "p_value": p,
+            })
+
+        # more than two groups: Kruskal-Wallis test
+        else:
+            values = [v for v in data_dict.values() if len(v) > 0]
+            stat, p = kruskal(*values)
+
+            stats_rows.append({
+                "feature": feat,
+                "test": "Kruskal-Wallis",
+                "group_1": "all",
+                "group_2": "all",
+                "n_1": sum(len(v) for v in values),
+                "n_2": np.nan,
+                "median_1": np.nan,
+                "median_2": np.nan,
+                "median_diff": np.nan,
+                "p_value": p,
+            })
+
+    stats_df = pd.DataFrame(stats_rows)
+    stats_df["q_value"] = bh_fdr_correction(stats_df["p_value"].values)
+    stats_df["significance"] = stats_df["q_value"].apply(p_to_star)
+
+    return stats_df
+
+
+def plot_distributions(
+    df,
+    features,
+    title_prefix,
+    show_legend=False,
+    group_col="type",
+    log_features=None,
+):
     plt.rcParams.update({
         "font.size": 20,
         "axes.titlesize": 20,
@@ -250,35 +527,54 @@ def plot_distributions(df, features, title_prefix, show_legend=False):
         "ytick.labelsize": 14,
     })
 
-    plt.figure(figsize=(21, 12))
+    if log_features is None:
+        log_features = ["volume", "area", "elongation", "bbox_aspect_ratio"]
 
-    groups = df["type"].unique()
+    groups = list(df[group_col].dropna().unique())
+
+    stats_df = compute_object_level_stats(
+        df=df,
+        features=features,
+        group_col=group_col,
+        log_features=log_features,
+    )
+
+    stats_map = {row["feature"]: row for _, row in stats_df.iterrows()}
+
+    n_features = len(features)
+    n_cols = 3
+    n_rows = int(np.ceil(n_features / n_cols))
+
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(7 * n_cols, 5.5 * n_rows))
+    axes = np.asarray(axes).ravel()
 
     for i, feat in enumerate(features):
-        ax = plt.subplot(2, 3, i + 1)
+        ax = axes[i]
 
-        # -------- collect data per group --------
         data_dict = {}
-        for group in groups:
-            data = df[df["type"] == group][feat].dropna().values
 
-            if feat in ["volume", "area", "elongation", "bbox_aspect_ratio"]:
-                data = np.log10(data + 1e-6)
+        for group in groups:
+            data = df[df[group_col] == group][feat].dropna().values
+            data = transform_feature(data, feat, log_features=log_features)
 
             if len(data) > 0:
                 data_dict[group] = data
 
-        # -------- shared bins --------
+        if len(data_dict) == 0:
+            ax.set_title(f"{title_prefix} {feat}")
+            ax.text(
+                0.5, 0.5,
+                "No valid data",
+                transform=ax.transAxes,
+                ha="center",
+                va="center",
+            )
+            continue
+
         all_data = np.concatenate(list(data_dict.values()))
         bins = np.histogram_bin_edges(all_data, bins=50)
 
-        hist_dict = {}
-
-        # -------- plot histograms --------
         for group, data in data_dict.items():
-            hist, _ = np.histogram(data, bins=bins, density=True)
-            hist_dict[group] = hist
-
             ax.hist(
                 data,
                 bins=bins,
@@ -287,41 +583,77 @@ def plot_distributions(df, features, title_prefix, show_legend=False):
                 label=group,
             )
 
-        # -------- compute histogram correlations --------
-        corrs = []
-        for g1, g2 in combinations(hist_dict.keys(), 2):
-            if np.std(hist_dict[g1]) > 0 and np.std(hist_dict[g2]) > 0:
-                r, _ = pearsonr(hist_dict[g1], hist_dict[g2])
-                corrs.append(r)
-
-        # -------- annotate --------
-        # if len(corrs) > 0:
-        #     text = (
-        #         f"mean r = {np.mean(corrs):.2f}\n"
-        #         f"min = {np.min(corrs):.2f}, max = {np.max(corrs):.2f}"
-        #     )
-        #     ax.text(
-        #         0.92, 0.92,
-        #         text,
-        #         transform=ax.transAxes,
-        #         ha="right",
-        #         va="top",
-        #         fontsize=20,
-        #         bbox=dict(boxstyle="round", fc="white", alpha=0.8),
-        #     )
-
         ax.set_title(f"{title_prefix} {feat}")
 
-        # -------- legend switch --------
+        if feat in log_features:
+            ax.set_xlabel(f"log10({feat})")
+        else:
+            ax.set_xlabel(feat)
+
+        ax.set_ylabel("Density")
+
+        # ---------- statistical annotation ----------
+        row = stats_map.get(feat, None)
+
+        if row is not None:
+            test = row["test"]
+            p = row["p_value"]
+            q = row["q_value"]
+            sig = row["significance"]
+
+            if test == "Mann-Whitney U":
+                text = (
+                    f"{sig}\n"
+                    f"{test}\n"
+                    f"n={int(row['n_1'])} vs {int(row['n_2'])}\n"
+                    f"p={format_p(p)}\n"
+                    f"q={format_p(q)}"
+                )
+            elif test == "Kruskal-Wallis":
+                text = (
+                    f"{sig}\n"
+                    f"{test}\n"
+                    f"n={int(row['n_1'])}\n"
+                    f"p={format_p(p)}\n"
+                    f"q={format_p(q)}"
+                )
+            else:
+                text = "No test"
+
+            ax.text(
+                0.97, 0.97,
+                text,
+                transform=ax.transAxes,
+                ha="right",
+                va="top",
+                fontsize=14,
+                bbox=dict(boxstyle="round", fc="white", alpha=0.85),
+            )
+
         if show_legend:
-            ax.legend()
+            ax.legend(fontsize=12)
+
+    for j in range(n_features, len(axes)):
+        axes[j].axis("off")
 
     plt.tight_layout()
     plt.show()
 
+    return stats_df
 
-plot_distributions(df_3d, features_3d, "3D",show_legend=True)
-plot_distributions(df_2d, features_2d, "2D",show_legend=True)
+stats_3d = plot_distributions(
+    df_3d,
+    features_3d,
+    "3D",
+    show_legend=True,
+)
 
-# run_stats(df_3d, features_3d, "3D")
-# run_stats(df_2d, features_2d, "2D")
+stats_2d = plot_distributions(
+    df_2d,
+    features_2d,
+    "2D",
+    show_legend=True,
+)
+
+print(stats_3d)
+print(stats_2d)

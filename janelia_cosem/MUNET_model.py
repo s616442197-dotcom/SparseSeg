@@ -78,13 +78,13 @@ class ConvBlock(nn.Module):
         return self.block(x)
 
 class MultiKernelUNet(nn.Module):
-    def __init__(self, in_channels=1, out_channels=1):
+    def __init__(self, in_channels=1, out_channels=1,kernel_sizes=(3, 5, 7)):
         super().__init__()
 
         # ===== Encoder (Multi-kernel, 低分辨率，值得) =====
-        self.enc1 = MultiKernelConvBlock(in_channels, 64)
-        self.enc2 = MultiKernelConvBlock(64, 128)
-        self.enc3 = MultiKernelConvBlock(128, 256)
+        self.enc1 = MultiKernelConvBlock(in_channels, 64,kernel_sizes=kernel_sizes)
+        self.enc2 = MultiKernelConvBlock(64, 128,kernel_sizes=kernel_sizes)
+        self.enc3 = MultiKernelConvBlock(128, 256,kernel_sizes=kernel_sizes)
 
         self.pool = nn.MaxPool2d(2)
 
@@ -111,3 +111,136 @@ class MultiKernelUNet(nn.Module):
         d1 = self.dec1(torch.cat([d1, e1], dim=1))
 
         return self.final(d1)
+
+
+class SimpleViTSeg(nn.Module):
+    def __init__(
+        self,
+        in_channels=1,
+        out_channels=1,
+        patch_size=4,
+        embed_dim=128,
+        depth=4,
+        num_heads=4,
+        mlp_ratio=4.0,
+        dropout=0.0,
+        kernel_sizes=(3, 5, 7)
+    ):
+        super().__init__()
+
+        self.patch_size = patch_size
+        self.embed_dim = embed_dim
+
+        # image -> patch tokens
+        self.patch_embed = nn.Conv2d(
+            in_channels,
+            embed_dim,
+            kernel_size=patch_size,
+            stride=patch_size,
+        )
+
+        # 不固定输入大小的 positional encoding
+        self.pos_embed = nn.Conv2d(
+            embed_dim,
+            embed_dim,
+            kernel_size=3,
+            padding=1,
+            groups=embed_dim,
+        )
+
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=embed_dim,
+            nhead=num_heads,
+            dim_feedforward=int(embed_dim * mlp_ratio),
+            dropout=dropout,
+            activation="gelu",
+            batch_first=True,
+            norm_first=True,
+        )
+
+        self.transformer = nn.TransformerEncoder(
+            encoder_layer,
+            num_layers=depth,
+        )
+
+        self.norm = nn.LayerNorm(embed_dim)
+
+        # token feature -> segmentation map
+        self.decoder = nn.Sequential(
+            nn.Conv2d(embed_dim, 64, kernel_size=3, padding=1),
+            nn.GroupNorm(8, 64),
+            nn.GELU(),
+
+            nn.Conv2d(64, 64, kernel_size=3, padding=1),
+            nn.GroupNorm(8, 64),
+            nn.GELU(),
+        )
+
+        self.final = nn.Conv2d(64, out_channels, kernel_size=1)
+
+    def _pad_to_patch_size(self, x):
+        B, C, H, W = x.shape
+
+        pad_h = (self.patch_size - H % self.patch_size) % self.patch_size
+        pad_w = (self.patch_size - W % self.patch_size) % self.patch_size
+
+        if pad_h == 0 and pad_w == 0:
+            return x, H, W
+
+        x = F.pad(
+            x,
+            pad=(0, pad_w, 0, pad_h),
+            mode="constant",
+            value=0,
+        )
+
+        return x, H, W
+
+    def forward(self, x):
+        """
+        x:
+            (B, in_channels, H, W)
+
+        return:
+            (B, out_channels, H, W)
+        """
+
+        x, H_orig, W_orig = self._pad_to_patch_size(x)
+
+        B, C, H, W = x.shape
+
+        # patch embedding
+        feat = self.patch_embed(x)
+        # (B, embed_dim, Hp, Wp)
+
+        Hp, Wp = feat.shape[-2:]
+
+        # positional encoding
+        feat = feat + self.pos_embed(feat)
+
+        # feature map -> tokens
+        tokens = feat.flatten(2).transpose(1, 2)
+        # (B, Hp*Wp, embed_dim)
+
+        # transformer
+        tokens = self.transformer(tokens)
+        tokens = self.norm(tokens)
+
+        # tokens -> feature map
+        feat = tokens.transpose(1, 2).reshape(B, self.embed_dim, Hp, Wp)
+
+        # upsample 回原图大小
+        feat = F.interpolate(
+            feat,
+            size=(H, W),
+            mode="bilinear",
+            align_corners=False,
+        )
+
+        feat = self.decoder(feat)
+        out = self.final(feat)
+
+        # crop 回原始大小
+        out = out[:, :, :H_orig, :W_orig]
+
+        return out

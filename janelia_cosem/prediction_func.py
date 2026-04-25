@@ -311,7 +311,7 @@ def infer_volume_edges_whole(feature_volume, model, thickness=2, batch_size=8):
 
 
 
-def infer_volume_edges_patchwise(
+def infer_volume_edges_patchwise_old(
     feature_volume,
     model,
     thickness=2,
@@ -351,7 +351,7 @@ def infer_volume_edges_patchwise(
 
                     input_tensor = torch.from_numpy(patch).unsqueeze(0).float().cuda()
 
-                    with torch.cuda.amp.autocast():
+                    with torch.amp.autocast("cuda"):
                         pred = model(input_tensor)
 
                     pred_prob = torch.sigmoid(pred).squeeze(0).cpu().numpy()
@@ -370,6 +370,113 @@ def infer_volume_edges_patchwise(
 
     # ========= smooth =========
     blurred = gaussian_filter(pred_volume, sigma=(1, 3, 3), mode="reflect")
+
+    return blurred, edge_volume
+
+def _make_starts(length, patch_size, stride):
+    """
+    生成 patch 起点，保证覆盖到最后，同时避免重复起点。
+    """
+    if length <= patch_size:
+        return [0]
+
+    starts = list(range(0, length - patch_size + 1, stride))
+
+    last = length - patch_size
+    if starts[-1] != last:
+        starts.append(last)
+
+    return sorted(set(starts))
+
+def infer_volume_edges_patchwise(
+    feature_volume,
+    model,
+    thickness=2,
+    patch_size=160,
+    stride=120,
+    batch_size=16,
+    device="cuda",
+    use_amp=True,
+    amp_dtype=torch.float16,
+    smooth_sigma=(1, 3, 3),
+):
+    """
+    优化点：
+    1. 每个 slice 内 batch 推理多个 patch，而不是一个 patch forward 一次
+    2. 每个 slice 的 feature 只搬到 GPU 一次
+    3. pred_slice / edge_slice / count_slice 在 GPU 上累加，最后一次性拷回 CPU
+    4. 使用 torch.inference_mode()
+    5. 可选 AMP 混合精度
+    """
+
+    D, F, H, W = feature_volume.shape
+
+    pred_volume = np.zeros((D, H, W), dtype=np.float32)
+    edge_volume = np.zeros((D, H, W), dtype=np.float32)
+
+    model = model.to(device)
+    model.eval()
+
+    # 固定输入尺寸时，cuDNN benchmark 通常有助于卷积选择更快算法
+    if device.startswith("cuda"):
+        torch.backends.cudnn.benchmark = True
+
+    x_starts = _make_starts(H, patch_size, stride)
+    y_starts = _make_starts(W, patch_size, stride)
+    coords = [(x, y) for x in x_starts for y in y_starts]
+
+    print(f"Patch num per slice: {len(coords)}")
+    print(f"Patch batch size: {batch_size}")
+
+    with torch.inference_mode():
+        for z in tqdm(range(thickness, D - thickness), desc="Patch inference"):
+
+            feat = feature_volume[z]
+
+            if isinstance(feat, torch.Tensor):
+                feat_t = feat.to(device=device, dtype=torch.float32, non_blocking=True)
+            else:
+                feat_t = torch.as_tensor(feat, dtype=torch.float32, device=device)
+
+            # shape: (F, H, W)
+            if feat_t.ndim != 3:
+                raise ValueError(f"Expected feature slice shape (F,H,W), got {feat_t.shape}")
+
+            pred_slice = torch.zeros((H, W), dtype=torch.float32, device=device)
+            edge_slice = torch.zeros((H, W), dtype=torch.float32, device=device)
+            count_slice = torch.zeros((H, W), dtype=torch.float32, device=device)
+
+            # ========= batched patch inference =========
+            for start in range(0, len(coords), batch_size):
+                batch_coords = coords[start:start + batch_size]
+
+                patches = []
+                for x, y in batch_coords:
+                    patch = feat_t[:, x:x + patch_size, y:y + patch_size]
+                    patches.append(patch)
+
+                input_tensor = torch.stack(patches, dim=0)  # (B, F, patch, patch)
+
+                if use_amp and device.startswith("cuda"):
+                    with torch.amp.autocast("cuda", dtype=amp_dtype):
+                        logits = model(input_tensor)
+                else:
+                    logits = model(input_tensor)
+
+                probs = torch.sigmoid(logits).float()  # (B, C, patch, patch)
+
+                for bi, (x, y) in enumerate(batch_coords):
+                    pred_slice[x:x + patch_size, y:y + patch_size] += probs[bi, 0]
+                    edge_slice[x:x + patch_size, y:y + patch_size] += probs[bi, 1]
+                    count_slice[x:x + patch_size, y:y + patch_size] += 1.0
+
+            pred_slice = pred_slice / count_slice.clamp_min(1.0)
+            edge_slice = edge_slice / count_slice.clamp_min(1.0)
+
+            pred_volume[z] = pred_slice.detach().cpu().numpy()
+            edge_volume[z] = edge_slice.detach().cpu().numpy()
+
+    blurred = gaussian_filter(pred_volume, sigma=smooth_sigma, mode="reflect")
 
     return blurred, edge_volume
 # def infer_volume_edges_whole(feature_volume, model, thickness=2):

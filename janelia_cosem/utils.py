@@ -1,9 +1,8 @@
-from scipy.ndimage import uniform_filter
-from scipy.ndimage import maximum_filter, minimum_filter,binary_dilation
+from scipy.ndimage import maximum_filter, minimum_filter,binary_dilation ,gaussian_filter,uniform_filter,label
 import cv2
 import numpy as np
-from scipy.ndimage import label
 from skimage.measure import moments_hu, moments_central, moments,regionprops
+from scipy.ndimage import binary_opening, generate_binary_structure
 
 def compute_statistical_mask(volume, window_size=20):
     """
@@ -55,7 +54,6 @@ def local_contrast_normalize(volume, kernel_size=20, eps=1e-5):
 
     volume_norm = (volume - local_min) / (local_max - local_min + eps)
     return volume_norm
-
 
 def local_standardize(volume, kernel_size=15, eps=1e-2):
     footprint = (kernel_size, kernel_size, 3)
@@ -343,7 +341,7 @@ def filter_connected_regions_shape_shape(test_volume_label, mask_label, threshol
 
     return test_out
 
-def filter_connected_regions_shape(
+def filter_connected_regions_shape_old(
     test_volume_label, mask_label,
     threshold=0.5, min_ratio=0.2, max_height=10
 ):
@@ -402,7 +400,6 @@ def filter_connected_regions_shape(
 
         # Euler 数：连通成分数 - 孔洞数（可以体现孔洞多不多）
         euler = float(p.euler_number)
-
         # 如果你希望“形状不含尺寸信息”，可以不放 area；
         # 如果也希望考虑大小，可以加一个 log 尺寸特征：
         log_area = np.log1p(area)  # 这个是尺寸相关的特征，可选
@@ -458,7 +455,7 @@ def filter_connected_regions_shape(
         # -------------------------
         error = np.abs(vec[None, :] - mask_feats) / (np.abs(mask_feats) + eps)
 
-        cond1 = np.any(np.all(error < threshold, axis=1))
+        cond1 = np.any(np.all(error <= threshold, axis=1))
 
         # -------------------------
         # 条件 2：靠近整体统计范围
@@ -488,12 +485,12 @@ def filter_connected_regions_shape(
             vec = get_shape_vec(p)
             mask_feats.append(vec)
             mask_sizes.append(p.area)
-
+    # print(len(mask_feats))
     if len(mask_feats) == 0:
         return np.zeros_like(test_volume_label)
     mask_feats = np.stack(mask_feats)
-    min_feat = mask_feats.min(axis=0)  # [D]
-    max_feat = mask_feats.max(axis=0)  # [D]
+    # min_feat = mask_feats.min(axis=0)  # [D]
+    # max_feat = mask_feats.max(axis=0)  # [D]
     min_size_v2, max_size_v2 = np.min(mask_sizes), np.max(mask_sizes)
     # print(np.shape(mask_feats))
     # === 3️⃣ 遍历 test_volume_label 每层 ===
@@ -504,13 +501,16 @@ def filter_connected_regions_shape(
             # if p.area < 10:
             #     continue
             if p.euler_number != 1:
+                # print('euler mismatch')
                 continue
             # 面积过滤
             if p.area < min_size_v2 * min_ratio or p.area > max_size_v2 / min_ratio:
+                # print('area mismatch')
                 continue
 
             vec = get_shape_vec(p)
             if np.all(vec == 0):
+                # print('none vec')
                 continue
 
             # vec = vec
@@ -541,7 +541,221 @@ def filter_connected_regions_shape(
 
     return test_out
 
-from scipy.ndimage import gaussian_filter
+def filter_connected_regions_shape(
+    test_volume_label,
+    mask_label,
+    threshold=0.5,
+    min_ratio=0.2,
+    max_height=10,
+    w_error=1.0,
+    w_range=1.0,
+    num_threshold=500,
+):
+    """
+    根据 mask_label 的已标注区域形状特征，对 test_volume_label 中的候选区域进行打分排序，
+    选择最像 mask_label 的前若干个区域。
+
+    选择数量:
+        target_num = max(num_mask + add_num, int(expand_ratio * num_mask))
+
+    参数:
+        test_volume_label: np.ndarray, [D,H,W]
+        mask_label: np.ndarray, [D,H,W]
+        threshold: 保留接口兼容，当前排序版本中不直接作为硬阈值使用
+        min_ratio: 面积过滤比例
+        max_height: Z方向最大厚度，传给 intersect_regions
+        w_error: score1 权重，越大越重视与单个模板的最小误差
+        w_range: score2 权重，越大越重视与整体统计范围的偏离
+        add_num: 至少比原始 mask 区域多选多少个
+        expand_ratio: 至少扩张到原始 mask 区域数量的多少倍
+
+    返回:
+        test_out: np.ndarray, [D,H,W], uint8
+    """
+
+    D, H, W = test_volume_label.shape
+    eps = 1e-8
+    if threshold <= 0:
+        print("threshold <= 0, skip shape filtering")
+        return (mask_label > 0).astype(np.uint8)
+
+    def _label_image(binary):
+        """
+        兼容 scipy.ndimage.label 和 skimage.measure.label
+        """
+        labeled = label(binary)
+
+        if isinstance(labeled, tuple):
+            labeled = labeled[0]
+
+        return labeled
+
+    def get_shape_vec(p):
+        area = float(p.area)
+        perim = float(p.perimeter) if p.perimeter is not None else 0.0
+
+        if perim > 0:
+            circularity = 4.0 * np.pi * area / (perim ** 2 + eps)
+        else:
+            circularity = 0.0
+
+        if p.minor_axis_length is not None and p.minor_axis_length > 0:
+            aspect = float(p.major_axis_length) / float(p.minor_axis_length + eps)
+        else:
+            aspect = 1.0
+
+        compact = float(p.extent) if p.extent is not None else 0.0
+        solidity = float(p.solidity) if p.solidity is not None else 0.0
+        ecc = float(p.eccentricity) if p.eccentricity is not None else 0.0
+        euler = float(p.euler_number)
+
+        hu = np.array(p.moments_hu, dtype=np.float64).ravel()
+        hu_norm = hu[:3]
+
+        geom_feat = np.array([
+            circularity,
+            aspect,
+            compact,
+            solidity,
+            ecc,
+            euler,
+        ], dtype=np.float32)
+
+        feat = np.concatenate([geom_feat, hu_norm]).astype(np.float32)
+
+        return feat
+
+
+    def shape_score(mask_feats, vec):
+        """
+        score1 和 score2 是负的相对误差，数值越接近 0 表示越相似。
+        最终 score 取两者中的较大值，因此只要候选区域满足其中一种相似性标准，就会获得较高分数。
+
+        score1:
+            当前 vec 与所有 mask_feats 的相对误差，
+            对每个模板取 max(error)，再取 min。
+
+        score2:
+            当前 vec 相对 mask_feats 整体均值和范围的偏离。
+        """
+
+        mask_feats_np = np.asarray(mask_feats, dtype=np.float32)
+        vec_np = np.asarray(vec, dtype=np.float32)
+
+        error = np.abs(vec_np[None, :] - mask_feats_np) / (
+            np.abs(mask_feats_np) + eps
+        )
+
+        score1 = -1*np.min(np.max(error, axis=1))
+
+        mean_feat = mask_feats_np.mean(axis=0)
+        max_feat = mask_feats_np.max(axis=0)
+        min_feat = mask_feats_np.min(axis=0)
+        range_feat = max_feat - min_feat
+
+        score2 = -1*np.max(
+            np.abs(vec_np - mean_feat) / (np.abs(mean_feat) + eps)
+        )
+
+        return float(score1), float(score2)
+
+
+    mask_feats = []
+    mask_sizes = []
+
+    for z in range(D):
+        labeled_mask = _label_image(mask_label[z] > 0)
+        props = regionprops(labeled_mask)
+
+        for p in props:
+            if p.area <= 0:
+                continue
+
+            vec = get_shape_vec(p)
+
+            if np.all(vec == 0):
+                continue
+
+            mask_feats.append(vec)
+            mask_sizes.append(p.area)
+
+    if len(mask_feats) == 0:
+        return np.zeros_like(test_volume_label, dtype=np.uint8)
+
+    mask_feats = np.stack(mask_feats, axis=0)
+    mask_sizes = np.asarray(mask_sizes)
+
+    num_mask = len(mask_feats)
+    min_size_v2 = np.min(mask_sizes)
+    max_size_v2 = np.max(mask_sizes)
+
+
+    candidates = []
+
+    for z in range(D):
+        labeled_test = _label_image(test_volume_label[z] > 0)
+        props_test = regionprops(labeled_test)
+
+        for p in props_test:
+
+            if p.euler_number != 1:
+                continue
+            if p.area < min_size_v2 * min_ratio:
+                continue
+            if p.area > max_size_v2 / min_ratio:
+                continue
+            vec = get_shape_vec(p)
+            if np.all(vec == 0):
+                continue
+            coords = np.where(labeled_test == p.label)
+
+            overlap_ratio = np.mean(mask_label[z][coords] > 0)
+
+            if overlap_ratio >= 0.8:
+                continue
+            score1, score2 = shape_score(mask_feats, vec)
+            candidates.append({
+                "score": np.max([score1*w_error,score2*w_range]),
+                "score1": score1,
+                "score2": score2,
+                "z": z,
+                "coords": coords,
+                "area": p.area,
+            })
+
+    if len(candidates) == 0:
+        return np.zeros_like(test_volume_label, dtype=np.uint8)
+
+    candidates = sorted(candidates, key=lambda x: x["score"], reverse=True)
+
+    scores = np.array([c["score"] for c in candidates], dtype=np.float32)
+
+    score_min = scores.min()
+    score_max = scores.max()
+    score_range = score_max - score_min
+
+    score_cutoff = score_max - score_range * threshold
+    target_num = int(np.sum(scores >= score_cutoff))
+
+    if num_mask < num_threshold:
+        add_num_max = 500
+    else:
+        add_num_max = 100
+
+    target_num = min(target_num, add_num_max)
+    target_num = min(target_num, len(candidates))
+
+    test_new = np.zeros_like(test_volume_label, dtype=np.uint8)
+
+    for c in candidates[:target_num]:
+        z = c["z"]
+        coords = c["coords"]
+        test_new[z][coords] = 1
+
+    print(f"mask num = {num_mask},add num= {target_num}")
+    return test_new.astype(np.uint8)
+
+
 def smooth_and_threshold(volume, sigma=(1, 2, 2), threshold=0.7):
     """
     对3D二值体数据进行高斯模糊，并选取高于阈值的区域。
@@ -565,7 +779,7 @@ def smooth_and_threshold(volume, sigma=(1, 2, 2), threshold=0.7):
     print(f"✅ 阈值 {threshold} 后保留比例: {smoothed_mask.mean():.4f}")
 
     return smoothed_mask
-from scipy.ndimage import binary_opening, generate_binary_structure
+
 def break_thin_connections(volume, radius=1):
     """
     使用3D形态学开运算 (Erosion + Dilation) 去掉细连接。
@@ -730,3 +944,213 @@ def compute_metrics(gt, pred):
     fpr = fp / (fp + tn + 1e-8)
 
     return iou, fpr
+
+def compute_metrics0(gt, pred, overlap_thr=0.1):
+    """
+    iou : float
+    fpr : float
+    """
+
+    gt = gt.astype(bool)
+    pred = pred.astype(bool)
+
+    # =========================
+    # 1. 连通域标记 gt
+    # =========================
+    labeled_gt, num_gt = label(gt)
+
+    intersection = 0
+
+    for label_id in range(1, num_gt + 1):
+        comp = labeled_gt == label_id
+        comp_area = comp.sum()
+
+        if comp_area == 0:
+            continue
+
+        overlap = np.logical_and(comp, pred).sum()
+        overlap_ratio = overlap / comp_area
+
+        if overlap_ratio > overlap_thr:
+            intersection += comp_area
+
+    # =========================
+    # 2. union 仍然按原来的 pixel-level union
+    # =========================
+    union = np.logical_or(gt, pred).sum()
+    iou = intersection / (union + 1e-8)
+
+    # =========================
+    # 3. FPR 仍然按 pixel-level false positive rate
+    # =========================
+    fp = np.logical_and(~gt, pred).sum()
+    tn = np.logical_and(~gt, ~pred).sum()
+    fpr = fp / (fp + tn + 1e-8)
+
+    return iou, fpr
+
+import os
+def evaluate_model_specs(
+    gt,
+    roi_num,
+    pred_root_list,
+    model_specs,
+    *,
+    celltype,
+    organelletype,
+    pred_filename,
+    anchor_model="SparseSeg",
+    verbose=True,
+    label_specific=None,
+):
+    """
+    返回:
+        metrics_dict:
+            {
+                "SparseSeg": {"iou": [...], "fpr": [...]},
+                "MitoNet":   {"iou": [...], "fpr": [...]},
+                ...
+            }
+
+        labels:
+            boxplot 横轴标签，例如 [1, 5, 10]
+
+        missing_files:
+            缺失文件记录
+    """
+
+    metrics_dict = {
+        spec["name"]: {
+            "iou": [],
+            "fpr": [],
+        }
+        for spec in model_specs
+    }
+
+    labels = []
+    missing_files = []
+    ii=0
+    for folder in roi_num:
+
+        if verbose:
+            print("\n" + "=" * 80)
+            print(f"ROI folder = {folder}")
+            print("=" * 80)
+
+        per_folder_metrics = {
+            spec["name"]: {
+                "iou": [],
+                "fpr": [],
+            }
+            for spec in model_specs
+        }
+
+        for i in pred_root_list:
+
+            if verbose:
+                print(f"\nPred root = {i}")
+
+            # ------------------------------------------------------------
+            # 保持和你原始逻辑一致：
+            # 如果 SparseSeg 这个 i/folder 不存在，就跳过这个重复实验。
+            # ------------------------------------------------------------
+            if anchor_model is not None:
+                anchor_spec = next(
+                    spec for spec in model_specs
+                    if spec["name"] == anchor_model
+                )
+
+                anchor_path = anchor_spec["path_template"].format(
+                    celltype=celltype,
+                    organelletype=organelletype,
+                    i=i,
+                    folder=folder,
+                    pred_filename=pred_filename,
+                )
+
+                if not os.path.exists(anchor_path):
+                    if verbose:
+                        print(f"[skip repeat] missing anchor {anchor_model}: {anchor_path}")
+
+                    missing_files.append({
+                        "model": anchor_model,
+                        "i": i,
+                        "folder": folder,
+                        "path": anchor_path,
+                    })
+                    continue
+
+            # ------------------------------------------------------------
+            # 对所有模型计算 metrics
+            # ------------------------------------------------------------
+            for spec in model_specs:
+
+                model_name = spec["name"]
+                path_template = spec["path_template"]
+                loader = spec["loader"]
+                loader_kwargs = spec.get("loader_kwargs", {})
+
+                pred_path = path_template.format(
+                    celltype=celltype,
+                    organelletype=organelletype,
+                    i=i,
+                    folder=folder,
+                    pred_filename=pred_filename,
+                )
+
+                if not os.path.exists(pred_path):
+                    if verbose:
+                        print(f"[skip] {model_name}: {pred_path}")
+
+                    missing_files.append({
+                        "model": model_name,
+                        "i": i,
+                        "folder": folder,
+                        "path": pred_path,
+                    })
+                    continue
+
+                pred_bin = loader(pred_path, **loader_kwargs)
+
+                if pred_bin.shape != gt.shape:
+                    raise ValueError(
+                        f"Shape mismatch for {model_name}\n"
+                        f"path       : {pred_path}\n"
+                        f"gt shape   : {gt.shape}\n"
+                        f"pred shape : {pred_bin.shape}"
+                    )
+
+                iou, fpr = compute_metrics(gt, pred_bin)
+
+                per_folder_metrics[model_name]["iou"].append(iou)
+                per_folder_metrics[model_name]["fpr"].append(fpr)
+
+                if verbose:
+                    print(
+                        f"[ok] {model_name:<10s} "
+                        f"IoU={iou:.4f}, FPR={fpr:.6f}"
+                    )
+
+        # ------------------------------------------------------------
+        # 如果 anchor model 在这个 folder 下至少有一个结果，则保留这个 folder
+        # ------------------------------------------------------------
+        if anchor_model is not None:
+            if len(per_folder_metrics[anchor_model]["iou"]) == 0:
+                if verbose:
+                    print(f"[skip folder] {folder}: no valid {anchor_model} result")
+                continue
+        if label_specific is None:
+            labels.append(folder)
+        else:
+            labels.append(label_specific[folder])
+
+        for spec in model_specs:
+            model_name = spec["name"]
+            metrics_dict[model_name]["iou"].append(
+                per_folder_metrics[model_name]["iou"]
+            )
+            metrics_dict[model_name]["fpr"].append(
+                per_folder_metrics[model_name]["fpr"]
+            )
+
+    return metrics_dict, labels, missing_files

@@ -395,13 +395,27 @@ class ValidPatchSliceDataset(Dataset):
         )
 
         # ---------- nz_coords ----------
-        nz_coords = torch.nonzero(self.mask_volume>0, as_tuple=False)
+        # nz_coords = torch.nonzero(self.mask_volume>0, as_tuple=False)
+        #
+        # soft_coords = torch.nonzero(
+        #     (self.negative_mask_volume>0) |
+        #     (self.softnega>0),
+        #     as_tuple=False
+        # )
+        mask_np = (self.mask_volume > 0).detach().cpu().numpy()
+        nz_coords_np = np.argwhere(mask_np)
 
-        soft_coords = torch.nonzero(
-            (self.negative_mask_volume>0) |
-            (self.softnega>0),
-            as_tuple=False
+        nz_coords = torch.from_numpy(nz_coords_np).long()
+
+        # ---------- soft_coords ----------
+        soft_mask_np = (
+            ((self.negative_mask_volume > 0) | (self.softnega > 0))
+            .detach()
+            .cpu()
+            .numpy()
         )
+        soft_coords_np = np.argwhere(soft_mask_np)
+        soft_coords = torch.from_numpy(soft_coords_np).long()
 
         if len(soft_coords) > 0:
 

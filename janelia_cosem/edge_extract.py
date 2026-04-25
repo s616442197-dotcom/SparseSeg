@@ -3,6 +3,8 @@ import tifffile as tiff
 from scipy.ndimage import label, binary_dilation,convolve,binary_erosion,binary_closing
 from tqdm import tqdm
 import cv2
+from scipy.ndimage import label as ndi_label
+
 
 def filter_by_erosion_ratio(slice_bin, min_size=50, max_size=10000, ratio_thresh=0.4):
     """
@@ -131,8 +133,8 @@ def filter_edge_area_by_perimeter_fast(edge_Line, edge_Area, ratio_low=1.8, rati
     D, H, W = edge_Area.shape
 
     # === 1️⃣ 连通区域标记 ===
-    labeled_line, n_line = label(edge_Line, return_num=True, connectivity=1)
-    labeled_area, n_area = label(edge_Area, return_num=True, connectivity=1)
+    labeled_line, n_line = ndi_label(edge_Line)
+    labeled_area, n_area = ndi_label(edge_Area)
     print(f"检测到 {n_line} 个 line 区域, {n_area} 个 area 区域")
 
     # === 2️⃣ 提取每个区域的周长 ===
@@ -171,10 +173,8 @@ def filter_edge_area_by_perimeter_fast(edge_Line, edge_Area, ratio_low=1.8, rati
     return filtered
 
 import numpy as np
-from skimage.measure import label, regionprops
 from skimage.morphology import convex_hull_image
-from scipy import ndimage
-def fill_edge_volume_by_region(edge_volume, min_size=5, max_ratio=3.0):
+def fill_edge_volume_by_region(edge_volume, min_size=5, max_ratio=3.0,z_expand=5):
     """
     对 3D edge_volume [D,H,W] 逐 slice 调用 fill_edge_slice_by_region
     """
@@ -189,11 +189,17 @@ def fill_edge_volume_by_region(edge_volume, min_size=5, max_ratio=3.0):
                 min_size=min_size,
                 max_ratio=max_ratio
             )
+    if z_expand > 0:
+        structure = np.ones((2 * z_expand + 1, 1, 1), dtype=bool)
+        filled_volume = binary_dilation(
+            filled_volume,
+            structure=structure
+        )
 
     return filled_volume
 def fill_edge_slice_by_region(edge_slice, min_size=5, max_ratio=3.0):
 
-    labeled, num = ndimage.label(edge_slice)
+    labeled, num = ndi_label(edge_slice)
     filled = np.zeros_like(edge_slice, dtype=bool)
 
     props = regionprops(labeled)
@@ -201,9 +207,6 @@ def fill_edge_slice_by_region(edge_slice, min_size=5, max_ratio=3.0):
     for prop in props:
 
         area = prop.area
-        if area < min_size:
-            continue
-
         minr, minc, maxr, maxc = prop.bbox
 
         # 只取 bbox 区域
@@ -211,9 +214,76 @@ def fill_edge_slice_by_region(edge_slice, min_size=5, max_ratio=3.0):
 
         hull = convex_hull_image(region)
         hull_area = hull.sum()
+        if hull_area < min_size:
+            continue
+        # if hull_area >= max_ratio * area:
+        filled[minr:maxr, minc:maxc] = True
 
-        if hull_area >= max_ratio * area:
-            filled[minr:maxr, minc:maxc] = True
+    return filled
+def fill_edge_slice_by_region_circle(edge_slice, min_size=5, min_ellipse_area=10):
+    """
+    对每个 2D 连通区域，用 regionprops 拟合椭圆包裹。
+    若椭圆面积 < min_ellipse_area，则舍弃。
+    返回所有椭圆填充后的 mask。
+    """
+
+    labeled, num = ndi_label(edge_slice)
+    filled = np.zeros_like(edge_slice, dtype=bool)
+
+    props = regionprops(labeled)
+
+    H, W = edge_slice.shape
+
+    for prop in props:
+        area = prop.area
+        if area < min_size:
+            continue
+
+        cy, cx = prop.centroid
+
+        major = prop.major_axis_length
+        minor = prop.minor_axis_length
+
+        if major <= 0 or minor <= 0:
+            continue
+
+        # 半长轴、半短轴
+        a = major / 2.0
+        b = minor / 2.0
+
+        ellipse_area = np.pi * a * b
+
+        if ellipse_area < min_ellipse_area:
+            continue
+
+        theta = prop.orientation
+
+        minr, minc, maxr, maxc = prop.bbox
+
+        # bbox 扩大一点，避免椭圆超出原 bbox
+        pad = int(np.ceil(max(a, b))) + 2
+
+        r0 = max(0, minr - pad)
+        r1 = min(H, maxr + pad)
+        c0 = max(0, minc - pad)
+        c1 = min(W, maxc + pad)
+
+        yy, xx = np.mgrid[r0:r1, c0:c1]
+
+        y = yy - cy
+        x = xx - cx
+
+        # skimage orientation 是主轴相对于 row 方向的角度
+        cos_t = np.cos(theta)
+        sin_t = np.sin(theta)
+
+        # 转到椭圆坐标系
+        y_rot = y * cos_t + x * sin_t
+        x_rot = -y * sin_t + x * cos_t
+
+        ellipse = (y_rot / a) ** 2 + (x_rot / b) ** 2 <= 1.0
+
+        filled[r0:r1, c0:c1] |= ellipse
 
     return filled
 
@@ -234,18 +304,18 @@ def filter_edge_area_by_bbox_iou_2d_vectorized(edge_Line, edge_Area, iou_thresh=
     assert edge_Line.shape == edge_Area.shape, "shape 不匹配"
     D, H, W = edge_Area.shape
     filtered = np.zeros_like(edge_Area, dtype=np.uint8)
-    total_kept_regions = 0
-
+    total_regions = 0
+    keep_num = 0
     for z in range(D):
         line_z = edge_Line[z]
         area_z = edge_Area[z]
-        if not (np.any(line_z) and np.any(area_z)):
+        if not np.any(area_z):
             continue
         # line_z = fill_edge_slice_by_region(line_z)
-        labeled_line, n_line = label(line_z, return_num=True, connectivity=1)
-        labeled_area, n_area = label(area_z, return_num=True, connectivity=1)
-
-        min_size=20
+        labeled_line, n_line = ndi_label(line_z)
+        labeled_area, n_area = ndi_label(area_z)
+        total_regions+=n_area
+        min_size=0
         keep_line = np.zeros_like(line_z, dtype=bool)
         keep_area = np.zeros_like(area_z, dtype=bool)
 
@@ -280,11 +350,11 @@ def filter_edge_area_by_bbox_iou_2d_vectorized(edge_Line, edge_Area, iou_thresh=
 
             if overlap_ratio >= iou_thresh:
                 keep_area |= region
+                keep_num+=1
 
-
+        # print(keep_area.sum())
         filtered[z] = keep_line | keep_area
-        _, z_num = label(filtered, return_num=True, connectivity=1)
-        total_kept_regions+=z_num
+
         # if n_line == 0 or n_area == 0:
         #     continue
         #
@@ -342,6 +412,6 @@ def filter_edge_area_by_bbox_iou_2d_vectorized(edge_Line, edge_Area, iou_thresh=
         # # === 输出该层 ===
         # if len(keep_labels) > 0:
         #     filtered[z] = np.isin(labeled_area, keep_labels).astype(np.uint8)
-
-    print(f"✅ 处理完成，共保留 {total_kept_regions} 个符合 IoU>{iou_thresh} 的区域")
+    # _, total_kept_regions = ndi_label(filtered)
+    print(f"original:{total_regions}, filtered: {keep_num}")
     return filtered
