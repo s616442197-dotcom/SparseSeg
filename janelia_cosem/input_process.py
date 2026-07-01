@@ -168,8 +168,8 @@ import tifffile
 # remove_ratio_list=[30,50,70,80,95]
 remove_ratio_list=[100,101,102,103,104]
 cell_type='hela2'
-# cell_type='jurkat'
-# cell_type='macrophage'
+cell_type='jurkat'
+cell_type='macrophage'
 
 # type='golgi'
 # type='lyso'
@@ -180,7 +180,7 @@ type='mito'
 # type='cent'
 
 limit_extreme=True
-numSelect=1
+numSelect=10
 
 for remove_ratio in remove_ratio_list:
     vol = tifffile.imread(f"inputdata/{cell_type}_{type}_s3.tif")

@@ -1142,7 +1142,9 @@ def evaluate_model_specs(
         if label_specific is None:
             labels.append(folder)
         else:
-            labels.append(label_specific[folder])
+            labels.append(label_specific[ii])
+            ii = ii+1
+            # labels.append(label_specific[folder])
 
         for spec in model_specs:
             model_name = spec["name"]

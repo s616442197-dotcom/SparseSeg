@@ -426,6 +426,124 @@ def transform_feature(data, feat, log_features=None, eps=1e-6):
     return data
 
 
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+from scipy.stats import mannwhitneyu, kruskal
+
+
+def format_p(p):
+    if pd.isna(p):
+        return "NA"
+    if p < 1e-4:
+        return f"{p:.1e}"
+    return f"{p:.4f}"
+
+
+def format_stat(x):
+    if pd.isna(x):
+        return "NA"
+    if abs(x) >= 1e4:
+        return f"{x:.2e}"
+    return f"{x:.1f}"
+
+
+def format_effect(x):
+    if pd.isna(x):
+        return "NA"
+    return f"{x:.2f}"
+
+
+def p_to_star(p):
+    if pd.isna(p):
+        return "NA"
+    if p < 0.001:
+        return "***"
+    elif p < 0.01:
+        return "**"
+    elif p < 0.05:
+        return "*"
+    else:
+        return "ns"
+
+
+def bh_fdr_correction(pvals):
+    pvals = np.asarray(pvals, dtype=float)
+    qvals = np.full_like(pvals, np.nan, dtype=float)
+
+    valid = ~np.isnan(pvals)
+    p = pvals[valid]
+
+    if len(p) == 0:
+        return qvals
+
+    order = np.argsort(p)
+    ranked_p = p[order]
+    n = len(ranked_p)
+
+    ranked_q = ranked_p * n / (np.arange(n) + 1)
+    ranked_q = np.minimum.accumulate(ranked_q[::-1])[::-1]
+    ranked_q = np.clip(ranked_q, 0, 1)
+
+    q = np.empty_like(ranked_q)
+    q[order] = ranked_q
+
+    qvals[valid] = q
+    return qvals
+
+
+def transform_feature(data, feat, log_features=None, eps=1e-6):
+    if log_features is None:
+        log_features = ["volume", "area", "elongation", "bbox_aspect_ratio"]
+
+    data = np.asarray(data, dtype=float)
+    data = data[~np.isnan(data)]
+
+    if feat in log_features:
+        data = data[data + eps > 0]
+        data = np.log10(data + eps)
+
+    return data
+
+
+def summarize_values(x):
+    x = np.asarray(x, dtype=float)
+    x = x[~np.isnan(x)]
+
+    if len(x) == 0:
+        return {
+            "mean": np.nan,
+            "sd": np.nan,
+            "median": np.nan,
+            "q1": np.nan,
+            "q3": np.nan,
+            "iqr": np.nan,
+        }
+
+    q1 = np.percentile(x, 25)
+    q3 = np.percentile(x, 75)
+
+    return {
+        "mean": np.mean(x),
+        "sd": np.std(x, ddof=1) if len(x) > 1 else np.nan,
+        "median": np.median(x),
+        "q1": q1,
+        "q3": q3,
+        "iqr": q3 - q1,
+    }
+
+
+def rank_biserial_from_u(U, n1, n2):
+    """
+    Rank-biserial correlation for Mann-Whitney U.
+    Positive value means group_1 tends to have larger values than group_2.
+    """
+    if n1 <= 0 or n2 <= 0:
+        return np.nan
+    return (2.0 * U) / (n1 * n2) - 1.0
+
+
 def compute_object_level_stats(
     df,
     features,
@@ -433,24 +551,32 @@ def compute_object_level_stats(
     log_features=None,
 ):
     """
-    Object-level statistics.
-    Each mitochondrion / object is treated as one observation.
+    Object-level / cross-section-level statistics.
+    Each connected mitochondrial object or 2D cross-section is treated as one observation.
+
+    Statistics are computed on the transformed scale for features in log_features.
+    Raw-scale descriptive statistics are also reported for source data.
     """
+
+    if log_features is None:
+        log_features = ["volume", "area", "elongation", "bbox_aspect_ratio"]
 
     groups = list(df[group_col].dropna().unique())
     stats_rows = []
 
     for feat in features:
-        data_dict = {}
+        raw_dict = {}
+        test_dict = {}
 
         for group in groups:
-            data = df[df[group_col] == group][feat].dropna().values
-            data = transform_feature(data, feat, log_features=log_features)
+            raw = df[df[group_col] == group][feat].dropna().values
+            test_values = transform_feature(raw, feat, log_features=log_features)
 
-            if len(data) > 0:
-                data_dict[group] = data
+            if len(test_values) > 0:
+                raw_dict[group] = np.asarray(raw, dtype=float)
+                test_dict[group] = test_values
 
-        if len(data_dict) < 2:
+        if len(test_dict) < 2:
             stats_rows.append({
                 "feature": feat,
                 "test": "NA",
@@ -458,51 +584,102 @@ def compute_object_level_stats(
                 "group_2": None,
                 "n_1": np.nan,
                 "n_2": np.nan,
-                "median_1": np.nan,
-                "median_2": np.nan,
-                "median_diff": np.nan,
+                "U_statistic": np.nan,
+                "H_statistic": np.nan,
                 "p_value": np.nan,
+                "rank_biserial_r": np.nan,
+                "value_scale": "log10" if feat in log_features else "raw",
             })
             continue
 
-        # two groups: Mann-Whitney U test
-        if len(data_dict) == 2:
-            g1, g2 = list(data_dict.keys())
-            x = data_dict[g1]
-            y = data_dict[g2]
+        # -----------------------------
+        # Two groups: Mann-Whitney U
+        # -----------------------------
+        if len(test_dict) == 2:
+            g1, g2 = list(test_dict.keys())
+            x = test_dict[g1]
+            y = test_dict[g2]
 
-            stat, p = mannwhitneyu(x, y, alternative="two-sided")
+            U, p = mannwhitneyu(x, y, alternative="two-sided")
+            r_rb = rank_biserial_from_u(U, len(x), len(y))
 
-            stats_rows.append({
+            raw_s1 = summarize_values(raw_dict[g1])
+            raw_s2 = summarize_values(raw_dict[g2])
+            test_s1 = summarize_values(x)
+            test_s2 = summarize_values(y)
+
+            row = {
                 "feature": feat,
                 "test": "Mann-Whitney U",
+                "alternative": "two-sided",
                 "group_1": g1,
                 "group_2": g2,
                 "n_1": len(x),
                 "n_2": len(y),
-                "median_1": np.median(x),
-                "median_2": np.median(y),
-                "median_diff": np.median(x) - np.median(y),
+                "U_statistic": U,
+                "H_statistic": np.nan,
                 "p_value": p,
-            })
+                "rank_biserial_r": r_rb,
+                "value_scale": "log10(x+1e-6)" if feat in log_features else "raw",
 
-        # more than two groups: Kruskal-Wallis test
+                # raw-scale descriptive statistics
+                "mean_1_raw": raw_s1["mean"],
+                "sd_1_raw": raw_s1["sd"],
+                "median_1_raw": raw_s1["median"],
+                "q1_1_raw": raw_s1["q1"],
+                "q3_1_raw": raw_s1["q3"],
+                "iqr_1_raw": raw_s1["iqr"],
+
+                "mean_2_raw": raw_s2["mean"],
+                "sd_2_raw": raw_s2["sd"],
+                "median_2_raw": raw_s2["median"],
+                "q1_2_raw": raw_s2["q1"],
+                "q3_2_raw": raw_s2["q3"],
+                "iqr_2_raw": raw_s2["iqr"],
+
+                # test-scale descriptive statistics
+                "mean_1_test_scale": test_s1["mean"],
+                "sd_1_test_scale": test_s1["sd"],
+                "median_1_test_scale": test_s1["median"],
+                "q1_1_test_scale": test_s1["q1"],
+                "q3_1_test_scale": test_s1["q3"],
+                "iqr_1_test_scale": test_s1["iqr"],
+
+                "mean_2_test_scale": test_s2["mean"],
+                "sd_2_test_scale": test_s2["sd"],
+                "median_2_test_scale": test_s2["median"],
+                "q1_2_test_scale": test_s2["q1"],
+                "q3_2_test_scale": test_s2["q3"],
+                "iqr_2_test_scale": test_s2["iqr"],
+
+                "median_diff_test_scale": test_s1["median"] - test_s2["median"],
+            }
+
+            stats_rows.append(row)
+
+        # -----------------------------
+        # More than two groups: Kruskal-Wallis
+        # -----------------------------
         else:
-            values = [v for v in data_dict.values() if len(v) > 0]
-            stat, p = kruskal(*values)
+            values = [v for v in test_dict.values() if len(v) > 0]
+            H, p = kruskal(*values)
 
-            stats_rows.append({
+            row = {
                 "feature": feat,
                 "test": "Kruskal-Wallis",
+                "alternative": "two-sided",
                 "group_1": "all",
                 "group_2": "all",
                 "n_1": sum(len(v) for v in values),
                 "n_2": np.nan,
-                "median_1": np.nan,
-                "median_2": np.nan,
-                "median_diff": np.nan,
+                "U_statistic": np.nan,
+                "H_statistic": H,
                 "p_value": p,
-            })
+                "rank_biserial_r": np.nan,
+                "value_scale": "log10(x+1e-6)" if feat in log_features else "raw",
+            }
+
+            stats_rows.append(row)
 
     stats_df = pd.DataFrame(stats_rows)
     stats_df["q_value"] = bh_fdr_correction(stats_df["p_value"].values)
@@ -518,6 +695,8 @@ def plot_distributions(
     show_legend=False,
     group_col="type",
     log_features=None,
+    save_path=None,
+    stats_csv_path=None,
 ):
     plt.rcParams.update({
         "font.size": 20,
@@ -539,6 +718,10 @@ def plot_distributions(
         log_features=log_features,
     )
 
+    if stats_csv_path is not None:
+        stats_df.to_csv(stats_csv_path, index=False)
+        print(f"Saved statistics table: {stats_csv_path}")
+
     stats_map = {row["feature"]: row for _, row in stats_df.iterrows()}
 
     n_features = len(features)
@@ -554,8 +737,8 @@ def plot_distributions(
         data_dict = {}
 
         for group in groups:
-            data = df[df[group_col] == group][feat].dropna().values
-            data = transform_feature(data, feat, log_features=log_features)
+            raw = df[df[group_col] == group][feat].dropna().values
+            data = transform_feature(raw, feat, log_features=log_features)
 
             if len(data) > 0:
                 data_dict[group] = data
@@ -604,16 +787,19 @@ def plot_distributions(
             if test == "Mann-Whitney U":
                 text = (
                     f"{sig}\n"
-                    f"{test}\n"
+                    f"Mann-Whitney U\n"
                     f"n={int(row['n_1'])} vs {int(row['n_2'])}\n"
+                    f"U={format_stat(row['U_statistic'])}\n"
+                    f"r={format_effect(row['rank_biserial_r'])}\n"
                     f"p={format_p(p)}\n"
                     f"q={format_p(q)}"
                 )
             elif test == "Kruskal-Wallis":
                 text = (
                     f"{sig}\n"
-                    f"{test}\n"
+                    f"Kruskal-Wallis\n"
                     f"n={int(row['n_1'])}\n"
+                    f"H={format_stat(row['H_statistic'])}\n"
                     f"p={format_p(p)}\n"
                     f"q={format_p(q)}"
                 )
@@ -626,7 +812,7 @@ def plot_distributions(
                 transform=ax.transAxes,
                 ha="right",
                 va="top",
-                fontsize=14,
+                fontsize=12,
                 bbox=dict(boxstyle="round", fc="white", alpha=0.85),
             )
 
@@ -637,15 +823,27 @@ def plot_distributions(
         axes[j].axis("off")
 
     plt.tight_layout()
+
+    if save_path is not None:
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        print(f"Saved figure: {save_path}")
+
     plt.show()
 
     return stats_df
+
+
+# ============================================================
+# Run plotting and statistics
+# ============================================================
 
 stats_3d = plot_distributions(
     df_3d,
     features_3d,
     "3D",
     show_legend=True,
+    save_path="mitochondria_morphometry_3d.png",
+    stats_csv_path="mitochondria_morphometry_stats_3d.csv",
 )
 
 stats_2d = plot_distributions(
@@ -653,7 +851,12 @@ stats_2d = plot_distributions(
     features_2d,
     "2D",
     show_legend=True,
+    save_path="mitochondria_morphometry_2d.png",
+    stats_csv_path="mitochondria_morphometry_stats_2d.csv",
 )
 
+print("\n3D statistics")
 print(stats_3d)
+
+print("\n2D statistics")
 print(stats_2d)
