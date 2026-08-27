@@ -1,0 +1,23 @@
+{
+  "case_id": "hela2_t102_r1",
+  "dataset_id": 703,
+  "dataset_name": "Dataset703_VEMHela2MitoT102R1Raw",
+  "positive_voxels": 303,
+  "roi_num": 1,
+  "schema_version": 1,
+  "source_sparse_label": "/mnt/nfs/data/home/sbw1996/vem/code/inputdata/label_hela2_mito_102_1.tif",
+  "target_code_counts": {
+    "0": 238799697,
+    "1": 303
+  },
+  "target_encoding": "binary sparse positive label; unlabeled voxels treated as background by official loss",
+  "target_shape": [
+    200,
+    1500,
+    796
+  ],
+  "task_id": 2,
+  "trial": 102,
+  "variant": "raw",
+  "wall_clock_seconds": 4.0639969147741795
+}

@@ -1,0 +1,102 @@
+model_name: mitonet_hela2_mito_104_5
+TRAIN:
+  train_dir: /mnt/nfs/data/home/sbw1996/vem_benchmark/work/mitonet/104_5/train
+  additional_train_dirs: null
+  model_dir: /mnt/nfs/data/home/sbw1996/vem_benchmark/output/mitonet_benchmark/104_5/model
+  save_freq: 1
+  finetune_layer: none
+  lr_schedule: OneCycleLR
+  schedule_params:
+    max_lr: 0.003
+    epochs: 8
+    steps_per_epoch: 12
+    pct_start: 0.3
+  amp: true
+  optimizer: AdamW
+  optimizer_params:
+    weight_decay: 0.1
+  print_freq: 50
+  metrics:
+  - metric: IoU
+    name: semantic_iou
+    labels: &id001
+    - 1
+    output_key: sem_logits
+    target_key: sem
+  batch_size: 16
+  workers: 4
+  augmentations:
+  - aug: RandomScale
+    scale_limit:
+    - -0.9
+    - 1
+  - aug: PadIfNeeded
+    min_height: 256
+    min_width: 256
+    border_mode: 0
+  - aug: RandomCrop
+    height: 256
+    width: 256
+  - aug: Rotate
+    limit: 180
+    border_mode: 0
+  - aug: RandomBrightnessContrast
+    brightness_limit: 0.3
+    contrast_limit: 0.3
+  - aug: HorizontalFlip
+  - aug: VerticalFlip
+EVAL:
+  eval_dir: null
+  epochs_per_eval: 1
+  metrics:
+  - metric: IoU
+    name: semantic_iou
+    labels: *id001
+    output_key: sem_logits
+    target_key: sem
+  - metric: PQ
+    name: pq
+    labels: *id001
+    label_divisor: 1000
+    output_key: pan_seg
+    target_key: pan_seg
+  - metric: F1
+    name: f1_50
+    labels: *id001
+    label_divisor: 1000
+    iou_thr: 0.5
+    output_key: pan_seg
+    target_key: pan_seg
+MODEL:
+  class_names:
+    1: mito
+  labels:
+  - 1
+  thing_list: []
+  model: /mnt/nfs/data/home/sbw1996/vem_benchmark/models/MitoNet_v1.pth
+  model_quantized: null
+  padding_factor: 16
+  norms:
+    mean: 0.57571
+    std: 0.12765
+  description: Official MitoNet_v1 generalist mitochondrial segmentation model.
+FINETUNE:
+  criterion: PanopticLoss
+  criterion_params:
+    ce_weight: 1
+    l1_weight: 0.01
+    mse_weight: 200
+    pr_weight: 1
+    top_k_percent: 0.2
+  dataset_class: SingleClassInstanceDataset
+  dataset_params:
+    weight_gamma: 0.0
+  engine: PanopticDeepLabEngine
+  engine_params:
+    confidence_thr: 0.5
+    label_divisor: 1000
+    nms_kernel: 7
+    nms_threshold: 0.1
+    stuff_area: 64
+    thing_list: []
+    void_label: 0

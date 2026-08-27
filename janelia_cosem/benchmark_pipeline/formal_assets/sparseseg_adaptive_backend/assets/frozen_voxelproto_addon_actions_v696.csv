@@ -1,0 +1,3 @@
+selector_schema,trial,seed_id,walker_threshold,action,voxels,oof_probability
+694,100,20,0.6,raw_random_walker,1875,0.633153
+694,100,29,0.4,raw_random_walker,1490,0.693437

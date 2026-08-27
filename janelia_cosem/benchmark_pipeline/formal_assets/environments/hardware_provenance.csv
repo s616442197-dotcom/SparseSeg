@@ -1,0 +1,10 @@
+method_group,hardware,timing_scope,provenance
+legacy StarDist / DeePiCt,NVIDIA GeForce RTX 5080,legacy formal training timing,legacy workstation environment archive
+COSEM 2D U-Net,NVIDIA GeForce RTX 4090,fresh fixed-mask mean end-to-end per case,15 per-case timing.json files from Slurm array 5283
+COSEM 3D U-Net,NVIDIA GeForce RTX 4090,fresh fixed-mask mean end-to-end per case,15 per-case timing.json files from Slurm array 5284
+SparseSeg finetuning cases 100_1 through 102_5,NVIDIA GeForce RTX 4090,three-iteration end-to-end run,per-case execution and timing manifests
+SparseSeg finetuning cases 102_10 through 104_10,NVIDIA RTX A6000,three-iteration end-to-end run,per-case execution and timing manifests
+SparseSeg-ViT,NVIDIA GeForce RTX 4090,full five-iteration run,per-case run_manifest.json
+Vanilla U-Net raw / sparse-matched,NVIDIA GeForce RTX 4090,process start through prediction TIFF save,per-case timing.json
+nnU-Net raw / sparse-matched,NVIDIA GeForce RTX 4090,dataset conversion through evaluator-compatible export,per-case timing metadata
+MitoNet pretrained / sparse-adapted,NVIDIA GeForce RTX 4090,raw read through prediction TIFF save,per-case timing.json

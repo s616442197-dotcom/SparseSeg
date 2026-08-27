@@ -1,0 +1,22 @@
+{
+  "channel_names": {
+    "0": "EM_z_shift_-2",
+    "1": "EM_z_shift_-1",
+    "2": "EM_z_shift_+0",
+    "3": "EM_z_shift_+1",
+    "4": "EM_z_shift_+2"
+  },
+  "converted_by": "prepare_official_nnunetv2_data.py",
+  "description": "Official nnU-Net v2 2D benchmark on one five-channel 2.5D EM volume. Condition=sparse_matched, trial=100, roi=5.",
+  "file_ending": ".tif",
+  "labels": {
+    "background": 0,
+    "ignore": 2,
+    "mitochondria": 1
+  },
+  "licence": "Research use; source data provenance retained by the project",
+  "name": "Dataset756_VEMHela2MitoT100R5SparseMatched",
+  "numTraining": 1,
+  "overwrite_image_reader_writer": "Tiff3DIO",
+  "reference": "SparseSeg reviewer-response controlled benchmark"
+}

@@ -7,13 +7,21 @@ import tifffile as tiff
 from utils import process_volume,local_contrast_normalize,filter_connected_regions_shape,intersect_regions
 from skimage.transform import downscale_local_mean
 import os
+import json
+import time
 from Loss_func import total_loss_fn
 import torch
 from torch import optim
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data.distributed import DistributedSampler
-from edge_extract import get_edge_region, filter_edge_area_by_bbox_iou_2d_vectorized,fill_edge_volume_by_region
+from edge_extract import (
+    get_edge_region,
+    filter_edge_area_by_bbox_iou_2d_vectorized,
+    fill_edge_volume_by_region,
+    filter_edge_area_by_bbox_iou_2d_corrected,
+    fill_edge_volume_by_region_corrected,
+)
 import torch.nn as nn
 import torch.nn.functional as F
 from scipy.ndimage import binary_fill_holes
@@ -28,7 +36,28 @@ from MUNET_model import MultiKernelUNet,SimpleViTSeg
 from prediction_func import infer_volume_edges_whole,feature_volume_generation,infer_volume_edges_patchwise
 from get_inputfeature_new import extract_stack_features
 from functools import lru_cache
+from pathlib import Path
+from adaptive_iterated_mask import (
+    generate_adaptive_iterated_mask,
+    infer_case as infer_adaptive_case,
+    source_balanced_dataset_class,
+)
 
+
+# Historical candidate 7 is retained only for explicit diagnostics.  It was
+# disqualified because cross-trial pseudo-label validation did not preserve a
+# nonempty zero/very-low-FP gate. It must never be the default workflow.
+DISQUALIFIED_CANDIDATE7_REFINEMENT = {
+    "shape_threshold": 0.2,
+    "shape_min_ratio": 0.5,
+    "shape_candidate_cap": None,
+    "edge_fill_mode": "raw",
+    "edge_min_size": 3,
+    "edge_max_ratio": None,
+    "edge_z_expand": 5,
+    "bbox_iou_threshold": 0.001,
+    "line_fill_threshold": 1.0,
+}
 
 @lru_cache(maxsize=4)
 def load_feature_volume_cached(feature_path, preload=True):
@@ -290,16 +319,59 @@ def main(
     batch_size=12,
     num_samples=1000,
     thickness=2,
+    inference_stride=None,
     base_folder="inputdata",
     kernel_sizes=(3,5,7),
     Loss_list=[10,0.1,0.1,0.01],
     if_Vit=False,
+    area_probability_quantile=99.0,
+    edge_filter_uses_probability=False,
+    refinement_profile="adaptive_iterated",
+    evaluation_probability_quantile=98.95,
+    pseudo_label_core_quantile=99.9,
+    adaptive_trial=None,
+    adaptive_run_name=None,
+    adaptive_backend_dir=None,
+    adaptive_continuous_selector=None,
+    adaptive_frozen_actions=None,
+    adaptive_sampling_policy="source_base85_850_120_30",
+    adaptive_seed_offset=1400000,
 ):
     # ========= DDP init =========
     rank, world_size, local_rank, device = ddp_setup()
     main_proc = is_main_process(rank)
 
     patchsize = (patch_scale, patch_scale)
+    if inference_stride is None:
+        inference_stride = max(1, patch_scale // 2)
+    if inference_stride > patch_scale:
+        raise ValueError(
+            f"inference_stride ({inference_stride}) must not exceed "
+            f"patch_scale ({patch_scale})"
+        )
+    valid_refinement_profiles = {
+        "adaptive_iterated",
+        "safe_abstain",
+        "experimental_candidate7",
+        "legacy",
+        "optimized_low_fp",
+    }
+    if refinement_profile not in valid_refinement_profiles:
+        raise ValueError(
+            f"refinement_profile must be one of {sorted(valid_refinement_profiles)}"
+        )
+    if refinement_profile == "optimized_low_fp":
+        raise RuntimeError(
+            "The former optimized_low_fp candidate was disqualified by "
+            "cross-trial pseudo-label FP validation. Use safe_abstain, or "
+            "explicitly request experimental_candidate7 for diagnostics only."
+        )
+
+    adaptive_case = None
+    if refinement_profile == "adaptive_iterated":
+        adaptive_case = infer_adaptive_case(
+            mask_name, adaptive_trial, adaptive_run_name
+        )
 
     if main_proc:
         print("=" * 70, flush=True)
@@ -310,12 +382,21 @@ def main(
         print(f"[INFO] mask_name         = {mask_name}", flush=True)
         print(f"[INFO] folder_name       = {folder_name}", flush=True)
         print(f"[INFO] patch_scale       = {patch_scale}", flush=True)
+        print(f"[INFO] inference_stride  = {inference_stride}", flush=True)
         print(f"[INFO] z_threshold       = {z_threshold}", flush=True)
         print(f"[INFO] iou_thresh        = {iou_thresh}", flush=True)
         print(f"[INFO] threshold         = {threshold}", flush=True)
         print(f"[INFO] negative_threshold= {negative_threshold}", flush=True)
         print(f"[INFO] low_weight_coeff  = {low_weight_coeff}", flush=True)
         print(f"[INFO] sparsity_weight   = {sparsity_weight}", flush=True)
+        print(f"[INFO] area_prob_quantile= {area_probability_quantile}", flush=True)
+        print(f"[INFO] edge_prob_to_hook = {edge_filter_uses_probability}", flush=True)
+        print(f"[INFO] refinement_profile= {refinement_profile}", flush=True)
+        print(f"[INFO] eval_prob_quantile= {evaluation_probability_quantile}", flush=True)
+        print(f"[INFO] new2_core_quantile= {pseudo_label_core_quantile}", flush=True)
+        if adaptive_case is not None:
+            print(f"[INFO] adaptive_trial/run = {adaptive_case}", flush=True)
+            print(f"[INFO] adaptive_sampler   = {adaptive_sampling_policy}", flush=True)
         print("=" * 70, flush=True)
 
 
@@ -410,7 +491,44 @@ def main(
 
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
 
-    dataset = ValidPatchSliceDataset(
+    dataset_class = ValidPatchSliceDataset
+    if refinement_profile == "adaptive_iterated" and interation_idx > 0:
+        previous_adaptive_root = (
+            Path(folder_name).resolve()
+            / "adaptive_iterated_mask"
+            / f"iteration_{interation_idx - 1}"
+        )
+        previous_new2 = (
+            previous_adaptive_root / "final" / "test_volume_label_new2.tif"
+        )
+        previous_base = previous_adaptive_root / "input" / "base_input.tif"
+        if not previous_new2.is_file() or not previous_base.is_file():
+            raise FileNotFoundError(
+                "adaptive iteration inputs are incomplete: "
+                f"new2={previous_new2}, base={previous_base}"
+            )
+        adaptive_trial_value, adaptive_run_value = adaptive_case
+        adaptive_roi_value = int(adaptive_run_value.rsplit("_", 1)[1])
+        dataset_class = source_balanced_dataset_class(
+            ValidPatchSliceDataset,
+            backend_dir=adaptive_backend_dir,
+            new2_path=previous_new2,
+            previous_base_path=previous_base,
+            audit_output_dir=(
+                Path(folder_name).resolve()
+                / "adaptive_sampling"
+                / f"iteration_{interation_idx}"
+            ),
+            policy=adaptive_sampling_policy,
+            seed=(
+                int(adaptive_seed_offset)
+                + adaptive_trial_value * 100
+                + adaptive_roi_value
+                + interation_idx
+            ),
+        )
+
+    dataset = dataset_class(
         volume=volume, mask_volume=test_volume_label_new, feature_volume=feature_volume,
         negative_volume_label=nega_test_volume_label, softnega=softnega,
         patch_size=patchsize,
@@ -443,6 +561,9 @@ def main(
     )
 
     # ========= Train =========
+    if torch.cuda.is_available():
+        torch.cuda.synchronize(device)
+    training_started = time.perf_counter()
     for epoch in range(repeated_epoch):
         model.train()
 
@@ -489,57 +610,193 @@ def main(
             avg_loss = total_loss / max(batch_count, 1)
             print(f"{now} Epoch {epoch} avg_loss={avg_loss:.6f}", flush=True)
 
+    if torch.cuda.is_available():
+        torch.cuda.synchronize(device)
+    training_wall_clock_seconds = time.perf_counter() - training_started
+
     # ========= 推理 + 保存：只在 rank0 =========
     if dist.is_initialized():
         dist.barrier()
 
     if main_proc:
-        msk_threshold = 0.99
+        post_training_started = time.perf_counter()
+        for name, value in (
+            ("area_probability_quantile", area_probability_quantile),
+            ("evaluation_probability_quantile", evaluation_probability_quantile),
+            ("pseudo_label_core_quantile", pseudo_label_core_quantile),
+        ):
+            if not 0.0 < value < 100.0:
+                raise ValueError(f"{name} must lie strictly between 0 and 100")
 
-        edge_vol, edge_Line = infer_volume_edges_patchwise(feature_volume, net, thickness=thickness,patch_size=patch_scale)
+        edge_vol, edge_Line = infer_volume_edges_patchwise(
+            feature_volume,
+            net,
+            thickness=thickness,
+            patch_size=patch_scale,
+            stride=inference_stride,
+        )
 
         if not os.path.exists(folder_name):
             os.makedirs(folder_name, exist_ok=True)
 
-        thresh_value = np.percentile(edge_vol, 100 * msk_threshold)
+        # Preserve probability calibration for direct evaluation. The RGB
+        # preview remains for backward compatibility, but evaluation should
+        # prefer this probability TIFF or the fixed-threshold binary TIFF.
+        probability_u8 = np.rint(np.clip(edge_vol, 0.0, 1.0) * 255.0).astype(np.uint8)
+        tiff.imwrite(
+            f"{folder_name}/edge_vol_probability_float32.tif",
+            np.asarray(edge_vol, dtype=np.float32),
+            compression="zlib",
+        )
+        tiff.imwrite(
+            f"{folder_name}/probability_uint8.tif",
+            probability_u8,
+            compression="zlib",
+        )
 
-        if filer_method == 0:
-            vol010 = (edge_vol >= min(thresh_value, 0.5)).astype(np.uint8)
-        elif filer_method == 1:
-            edge_area = get_edge_region(edge_Line)
-            vol010 = intersect_regions((edge_area > 0.5), (edge_vol >= max(thresh_value, 0.5)), overlap_ratio=0.01)
-            vol010 = vol010.astype(np.uint8)
+        def threshold_area_probability(quantile):
+            thresh_value = np.percentile(edge_vol, quantile)
+            if filer_method == 0:
+                binary = edge_vol >= min(thresh_value, 0.5)
+            elif filer_method == 1:
+                edge_area = get_edge_region(edge_Line)
+                binary = intersect_regions(
+                    edge_area > 0.5,
+                    edge_vol >= max(thresh_value, 0.5),
+                    overlap_ratio=0.01,
+                ) > 0
+            else:
+                binary = edge_vol >= min(thresh_value, 0.5)
+                for z in range(binary.shape[0]):
+                    binary[z] = binary_fill_holes(binary[z])
+            binary = binary.astype(np.uint8)
+            binary[nega_test_volume_label > mask_thd] = 0
+            return binary
+
+        # Keep pseudo-label construction and network evaluation separate.
+        # The conservative q99 area candidate feeds new2; q98.95 is the
+        # frozen edge_vol operating point used only for reporting/evaluation.
+        vol01 = threshold_area_probability(area_probability_quantile)
+        evaluation_prediction = threshold_area_probability(
+            evaluation_probability_quantile
+        )
+        tiff.imwrite(
+            f"{folder_name}/prediction_fixed_threshold.tif",
+            evaluation_prediction,
+            compression="zlib",
+        )
+
+        adaptive_result = None
+        if refinement_profile == "adaptive_iterated":
+            adaptive_trial_value, adaptive_run_value = adaptive_case
+            adaptive_result = generate_adaptive_iterated_mask(
+                edge_vol=edge_vol,
+                raw_path=os.path.join(base_folder, f"{raw_name}.tif"),
+                feature_volume_path=feature_path,
+                base_label=test_volume_label_base,
+                negative_label=nega_test_volume_label,
+                output_folder=folder_name,
+                iteration_index=interation_idx,
+                trial=adaptive_trial_value,
+                run_name=adaptive_run_value,
+                backend_dir=adaptive_backend_dir,
+                continuous_selector=adaptive_continuous_selector,
+                frozen_actions=adaptive_frozen_actions,
+            )
+            test_volume_label_new2 = adaptive_result.new2.astype(np.uint8)
+            test_volume_label_shape = test_volume_label_new2.copy()
+            edge_volume = np.zeros_like(test_volume_label_new2, dtype=np.uint8)
+        elif refinement_profile == "safe_abstain":
+            # No nonempty GT-blind morphology rule passed the frozen
+            # cross-trial zero/very-low-FP gate. Abstaining is the only
+            # automatic behavior that guarantees no false pseudo-label is
+            # injected. The complete next label therefore remains the base.
+            test_volume_label_shape = np.zeros_like(vol01, dtype=np.uint8)
+            edge_volume = np.zeros_like(edge_Line, dtype=np.uint8)
+            test_volume_label_new2 = np.zeros_like(vol01, dtype=np.uint8)
+            print("[SAFETY] new2 abstained: no validated nonempty low-FP rule", flush=True)
+        elif refinement_profile == "experimental_candidate7":
+            config = DISQUALIFIED_CANDIDATE7_REFINEMENT
+            test_volume_label_shape = filter_connected_regions_shape(
+                vol01,
+                test_volume_label_base,
+                threshold=config["shape_threshold"],
+                min_ratio=config["shape_min_ratio"],
+                max_height=z_threshold,
+                candidate_cap=config["shape_candidate_cap"],
+            )
+            edge_volume = fill_edge_volume_by_region_corrected(
+                edge_Line > 0.5,
+                min_size=config["edge_min_size"],
+                max_ratio=config["edge_max_ratio"],
+                z_expand=config["edge_z_expand"],
+                fill_mode=config["edge_fill_mode"],
+            )
+            test_volume_label_new2 = filter_edge_area_by_bbox_iou_2d_corrected(
+                edge_volume,
+                test_volume_label_shape,
+                iou_thresh=config["bbox_iou_threshold"],
+                line_fill_thresh=config["line_fill_threshold"],
+            )
+            core_threshold = np.percentile(edge_vol, pseudo_label_core_quantile)
+            test_volume_label_new2 = np.logical_and(
+                test_volume_label_new2 > 0,
+                edge_vol > core_threshold,
+            ).astype(np.uint8)
         else:
-            vol010 = (edge_vol >= min(thresh_value, 0.5)).astype(np.uint8)
-            for z in range(vol010.shape[0]):
-                vol010[z] = binary_fill_holes(vol010[z]).astype(np.uint8)
+            test_volume_label_shape = filter_connected_regions_shape(
+                vol01,
+                test_volume_label_base,
+                threshold=threshold,
+                min_ratio=1.0,
+                max_height=z_threshold,
+            )
+            edge_filter_input = (
+                edge_Line if edge_filter_uses_probability else (edge_Line > 0.5)
+            )
+            edge_volume = fill_edge_volume_by_region(
+                edge_filter_input,
+                min_size=5,
+                max_ratio=3.0,
+            )
+            test_volume_label_new2 = filter_edge_area_by_bbox_iou_2d_vectorized(
+                edge_volume,
+                test_volume_label_shape,
+                iou_thresh=iou_thresh,
+                line_fill_thresh=line_coef,
+            )
 
-        vol01 = vol010.astype(np.uint8)
-        vol01[nega_test_volume_label > mask_thd] = 0
-
-        # test_volume_label_shape = filter_connected_regions_shape(
-        #     vol01, base0, threshold=threshold, min_ratio=1.0, max_height=z_threshold
-        # )
-        test_volume_label_shape = filter_connected_regions_shape(
-            vol01, test_volume_label_base, threshold=threshold, min_ratio=1.0, max_height=z_threshold
+        test_volume_label_new2[nega_test_volume_label > mask_thd] = 0
+        tiff.imwrite(
+            f"{folder_name}/test_volume_label_new2.tif",
+            test_volume_label_new2.astype(np.uint8),
+            compression="zlib",
         )
 
-        edge_volume = fill_edge_volume_by_region((edge_Line > 0.5),min_size=5, max_ratio=3.0)
-        # edge_volume = (edge_Line > 0.5)
-        # test_volume_label_edge = filter_connected_regions_shape(
-        #     edge_volume, base0, threshold=threshold, min_ratio=1.0, max_height=z_threshold
-        # )
-
-
-        test_volume_label_new2 = filter_edge_area_by_bbox_iou_2d_vectorized(
-            (edge_volume), test_volume_label_shape,
-            iou_thresh=iou_thresh, line_fill_thresh=line_coef
-        )
-
+        # ``new2`` contains only conservative additions.  The next iteration
+        # must train on the complete accumulated pseudo-label, not on new2
+        # alone: (new2 OR current base) AND NOT explicit negative label.
         test_volume_label_save = 1.0 * test_volume_label_new2 + test_volume_label_base
         test_volume_label_save = np.clip(test_volume_label_save, 0, 1.0)
         test_volume_label_save[nega_test_volume_label > mask_thd] = 0
         test_volume_label_save_u8 = test_volume_label_save.astype(np.uint8)
+        expected_next_iteration_label = np.logical_or(
+            test_volume_label_new2 > mask_thd,
+            test_volume_label_base > mask_thd,
+        )
+        expected_next_iteration_label[nega_test_volume_label > mask_thd] = False
+        if not np.array_equal(test_volume_label_save_u8 > 0, expected_next_iteration_label):
+            raise RuntimeError(
+                "next-iteration label must be (test_volume_label_new2 OR "
+                "test_volume_label_base) with explicit negatives cleared"
+            )
+        if adaptive_result is not None and not np.array_equal(
+            test_volume_label_save_u8 > 0,
+            adaptive_result.complete_label > 0,
+        ):
+            raise RuntimeError(
+                "segment_cell complete label differs from adaptive backend output"
+            )
 
         # outputs
         if interation_idx >= 3:
@@ -555,6 +812,28 @@ def main(
 
         # 保存模型：只保存真实 net（不是 DDP wrapper）
         save_model(net, f"{folder_name}/model_{interation_idx}.pt")
+        if torch.cuda.is_available():
+            torch.cuda.synchronize(device)
+        stage_timing = {
+            "schema_version": 726,
+            "iteration_zero_based": int(interation_idx),
+            "training_wall_clock_seconds": float(training_wall_clock_seconds),
+            "configured_epochs": int(repeated_epoch),
+            "average_training_time_per_epoch_seconds": (
+                float(training_wall_clock_seconds) / max(int(repeated_epoch), 1)
+            ),
+            "post_training_inference_new2_and_save_wall_clock_seconds": (
+                time.perf_counter() - post_training_started
+            ),
+            "measurement_kind": "synchronized_training_stage_wall_clock",
+            "paper_declared_parameters_changed": False,
+            "created_local_time": datetime.now().isoformat(),
+        }
+        with open(
+            f"{folder_name}/segment_cell_timing_iteration_{interation_idx}.json",
+            "w", encoding="utf-8"
+        ) as handle:
+            json.dump(stage_timing, handle, indent=2)
 
         print("[DONE] rank0 saved outputs.", flush=True)
 
@@ -572,6 +851,7 @@ if __name__ == "__main__":
     parser.add_argument("--filer_method", type=int, default=2)
     parser.add_argument("--z_threshold", type=int, default=10)
     parser.add_argument("--patch_scale", type=int, default=140)
+    parser.add_argument("--inference_stride", type=int, default=None)
     parser.add_argument("--raw_name", type=str, default="jurkat_em_s3")
     parser.add_argument("--mask_name", type=str, default="label_jurkat_er_30")
     parser.add_argument("--folder_name", type=str, default="label_jurkat_er_30")
@@ -582,6 +862,34 @@ if __name__ == "__main__":
     parser.add_argument("--negative_threshold", type=float, default=1.0)
     parser.add_argument("--low_weight_coeff", type=float, default=10.0)
     parser.add_argument("--sparsity_weight", type=float, default=0.0)
+    parser.add_argument(
+        "--refinement_profile",
+        choices=(
+            "adaptive_iterated",
+            "safe_abstain",
+            "experimental_candidate7",
+            "legacy",
+            "optimized_low_fp",
+        ),
+        default="adaptive_iterated",
+    )
+    parser.add_argument(
+        "--evaluation_probability_quantile", type=float, default=98.95
+    )
+    parser.add_argument(
+        "--pseudo_label_core_quantile", type=float, default=99.9
+    )
+    parser.add_argument("--adaptive_trial", type=int)
+    parser.add_argument("--adaptive_run_name")
+    parser.add_argument("--adaptive_backend_dir")
+    parser.add_argument("--adaptive_continuous_selector")
+    parser.add_argument("--adaptive_frozen_actions")
+    parser.add_argument(
+        "--adaptive_sampling_policy",
+        default="source_base85_850_120_30",
+        choices=("source_base85_850_120_30", "source_equal_485_485_30"),
+    )
+    parser.add_argument("--adaptive_seed_offset", type=int, default=1400000)
 
     args = parser.parse_args()
 
@@ -590,6 +898,7 @@ if __name__ == "__main__":
         filer_method=args.filer_method,
         z_threshold=args.z_threshold,
         patch_scale=args.patch_scale,
+        inference_stride=args.inference_stride,
         raw_name=args.raw_name,
         mask_name=args.mask_name,
         folder_name=args.folder_name,
@@ -600,4 +909,14 @@ if __name__ == "__main__":
         negative_threshold=args.negative_threshold,
         low_weight_coeff=args.low_weight_coeff,
         sparsity_weight=args.sparsity_weight,
+        refinement_profile=args.refinement_profile,
+        evaluation_probability_quantile=args.evaluation_probability_quantile,
+        pseudo_label_core_quantile=args.pseudo_label_core_quantile,
+        adaptive_trial=args.adaptive_trial,
+        adaptive_run_name=args.adaptive_run_name,
+        adaptive_backend_dir=args.adaptive_backend_dir,
+        adaptive_continuous_selector=args.adaptive_continuous_selector,
+        adaptive_frozen_actions=args.adaptive_frozen_actions,
+        adaptive_sampling_policy=args.adaptive_sampling_policy,
+        adaptive_seed_offset=args.adaptive_seed_offset,
     )

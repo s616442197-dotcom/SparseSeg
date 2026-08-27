@@ -220,6 +220,47 @@ def fill_edge_slice_by_region(edge_slice, min_size=5, max_ratio=3.0):
         filled[minr:maxr, minc:maxc] = True
 
     return filled
+
+
+def fill_edge_volume_by_region_corrected(
+    edge_volume,
+    min_size=5,
+    max_ratio=3.0,
+    z_expand=0,
+    fill_mode="convex_hull",
+):
+    """Clean/fill edge components without replacing them by whole bboxes.
+
+    ``max_ratio`` limits convex-hull area divided by observed component area.
+    ``fill_mode='raw'`` keeps the cleaned component itself; ``'convex_hull'``
+    writes its actual convex hull.  This is the corrected implementation used
+    by the optimized low-FP iterative-refinement profile.
+    """
+    if fill_mode not in {"raw", "convex_hull"}:
+        raise ValueError(f"unsupported fill_mode: {fill_mode}")
+
+    output = np.zeros_like(edge_volume, dtype=bool)
+    for z in range(edge_volume.shape[0]):
+        labeled, _ = ndi_label(np.asarray(edge_volume[z]) > 0)
+        for prop in regionprops(labeled):
+            minr, minc, maxr, maxc = prop.bbox
+            component = labeled[minr:maxr, minc:maxc] == prop.label
+            hull = convex_hull_image(component)
+            hull_area = int(hull.sum())
+            if hull_area < min_size:
+                continue
+            hull_ratio = hull_area / max(float(prop.area), 1.0)
+            if max_ratio is not None and hull_ratio > max_ratio:
+                continue
+            selected = component if fill_mode == "raw" else hull
+            output[z, minr:maxr, minc:maxc] |= selected
+
+    if z_expand > 0:
+        output = binary_dilation(
+            output,
+            structure=np.ones((2 * z_expand + 1, 1, 1), dtype=bool),
+        )
+    return output
 def fill_edge_slice_by_region_circle(edge_slice, min_size=5, min_ellipse_area=10):
     """
     对每个 2D 连通区域，用 regionprops 拟合椭圆包裹。
@@ -415,3 +456,73 @@ def filter_edge_area_by_bbox_iou_2d_vectorized(edge_Line, edge_Area, iou_thresh=
     # _, total_kept_regions = ndi_label(filtered)
     print(f"original:{total_regions}, filtered: {keep_num}")
     return filtered
+
+
+def filter_edge_area_by_bbox_iou_2d_corrected(
+    edge_line,
+    edge_area,
+    iou_thresh=0.8,
+    line_fill_thresh=0.5,
+    chunk_size=512,
+):
+    """Keep area components matched to an edge component by true bbox IoU.
+
+    The archived active branch used voxel overlap divided only by area size
+    and did not apply ``line_fill_thresh``.  This implementation applies both
+    terms exactly and returns only complete area components.
+    """
+    if edge_line.shape != edge_area.shape:
+        raise ValueError("edge_line and edge_area must have the same shape")
+    if not 0.0 <= iou_thresh <= 1.0:
+        raise ValueError("iou_thresh must lie in [0, 1]")
+    if not 0.0 <= line_fill_thresh <= 1.0:
+        raise ValueError("line_fill_thresh must lie in [0, 1]")
+
+    output = np.zeros_like(edge_area, dtype=np.uint8)
+    for z in range(edge_area.shape[0]):
+        labeled_area, area_count = ndi_label(np.asarray(edge_area[z]) > 0)
+        labeled_edge, _ = ndi_label(np.asarray(edge_line[z]) > 0)
+        area_props = regionprops(labeled_area)
+        edge_props = []
+        for prop in regionprops(labeled_edge):
+            minr, minc, maxr, maxc = prop.bbox
+            bbox_area = max(float((maxr - minr) * (maxc - minc)), 1.0)
+            if float(prop.area) / bbox_area <= line_fill_thresh:
+                edge_props.append(prop)
+        if not area_props or not edge_props:
+            continue
+
+        area_boxes = np.asarray([prop.bbox for prop in area_props], dtype=np.float64)
+        edge_boxes = np.asarray([prop.bbox for prop in edge_props], dtype=np.float64)
+        ey1 = edge_boxes[None, :, 0]
+        ex1 = edge_boxes[None, :, 1]
+        ey2 = edge_boxes[None, :, 2]
+        ex2 = edge_boxes[None, :, 3]
+        edge_box_area = (ey2 - ey1) * (ex2 - ex1)
+        max_iou = np.zeros(len(area_props), dtype=np.float64)
+
+        for start in range(0, len(area_props), chunk_size):
+            stop = min(start + chunk_size, len(area_props))
+            boxes = area_boxes[start:stop]
+            ay1 = boxes[:, None, 0]
+            ax1 = boxes[:, None, 1]
+            ay2 = boxes[:, None, 2]
+            ax2 = boxes[:, None, 3]
+            intersection = np.maximum(
+                0.0, np.minimum(ay2, ey2) - np.maximum(ay1, ey1)
+            ) * np.maximum(
+                0.0, np.minimum(ax2, ex2) - np.maximum(ax1, ex1)
+            )
+            area_box_area = (ay2 - ay1) * (ax2 - ax1)
+            iou = intersection / (
+                area_box_area + edge_box_area - intersection + 1e-6
+            )
+            max_iou[start:stop] = np.max(iou, axis=1)
+
+        score_by_label = np.zeros(area_count + 1, dtype=np.float64)
+        for prop, score in zip(area_props, max_iou):
+            score_by_label[prop.label] = score
+        keep = score_by_label >= iou_thresh
+        keep[0] = False
+        output[z] = keep[labeled_area]
+    return output

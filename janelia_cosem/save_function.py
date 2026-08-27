@@ -7,7 +7,14 @@ from utils import compute_statistical_mask,process_volume,local_contrast_normali
 from skimage.transform import downscale_local_mean
 import torch
 
-def save_volume_with_masks_as_rgb_tiff(volume, mask1, mask2, path="output.tiff"):
+def save_volume_with_masks_as_rgb_tiff(
+    volume,
+    mask1,
+    mask2,
+    path="output.tiff",
+    *,
+    normalize_masks=False,
+):
     """
     volume, mask1, mask2: [D, H, W] 的 numpy 数组，float32 或 uint8，范围归一化到 [0, 1] 或 [0, 255]
     保存为 [D, H, W, 3] 的 RGB 格式 tiff
@@ -19,13 +26,19 @@ def save_volume_with_masks_as_rgb_tiff(volume, mask1, mask2, path="output.tiff")
     mask1 = mask1.astype(np.float32)
     mask2 = mask2.astype(np.float32)
 
-    # 归一化到 0~1
+    # The raw image is for display and may be contrast-stretched. Prediction
+    # masks are probabilities/binary data: preserve their absolute calibration
+    # unless legacy display normalization is explicitly requested.
     def norm(x):
         return (x - x.min()) / (x.max() - x.min() + 1e-8)
 
     volume_n = norm(volume)
-    mask1_n = norm(mask1)
-    mask2_n = norm(mask2)
+    if normalize_masks:
+        mask1_n = norm(mask1)
+        mask2_n = norm(mask2)
+    else:
+        mask1_n = np.clip(mask1, 0.0, 1.0)
+        mask2_n = np.clip(mask2, 0.0, 1.0)
 
     rgb = np.stack([
         volume_n,  # R: 原图
@@ -34,7 +47,7 @@ def save_volume_with_masks_as_rgb_tiff(volume, mask1, mask2, path="output.tiff")
     ], axis=-1)  # [D, H, W, 3]
 
     # 转为 8-bit
-    rgb_uint8 = (rgb * 255).astype(np.uint8)
+    rgb_uint8 = np.rint(rgb * 255).astype(np.uint8)
 
     # 保存为多帧 RGB tiff
     tiff.imwrite(path, rgb_uint8, photometric='rgb')

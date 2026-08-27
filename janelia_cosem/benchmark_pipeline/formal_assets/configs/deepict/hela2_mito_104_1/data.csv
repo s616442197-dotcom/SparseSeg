@@ -1,0 +1,2 @@
+tomo_name,id,data,filtered_data,labels,flip_y
+hela2_mito_104_1,hela2_mito_104_1,/mnt/c/baidunetdiskdownload/empanda/data/raw_deepict.mrc,/mnt/c/baidunetdiskdownload/empanda/data/raw_deepict.mrc,/mnt/c/baidunetdiskdownload/empanda/data/deepict_finetune/hela2_mito_104_1_label.mrc,False

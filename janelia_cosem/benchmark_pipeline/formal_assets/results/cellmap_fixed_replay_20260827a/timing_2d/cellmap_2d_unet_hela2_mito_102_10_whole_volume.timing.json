@@ -1,0 +1,14 @@
+{
+  "model": "cosem_2d_unet",
+  "epochs": 100,
+  "wall_clock_seconds": 79.9814765676856,
+  "prediction": "/mnt/nfs/data/home/sbw1996/vem_benchmark/cellmap_fixed_replay_20260827a/output/data/cellmap_official_2d_tif_predictions/cellmap_2d_unet_hela2_mito_102_10_whole_volume.tif",
+  "compatibility_loader": "direct positive-centered patches",
+  "architecture_source": "portable CellMap-compatible U-Net",
+  "seed": 42,
+  "batch_size": 8,
+  "steps_per_epoch": 200,
+  "inference_overlap": 0.5,
+  "label_treatment": "unselected voxels treated as background",
+  "formal_metrics_source": "fresh fixed-mask replay"
+}

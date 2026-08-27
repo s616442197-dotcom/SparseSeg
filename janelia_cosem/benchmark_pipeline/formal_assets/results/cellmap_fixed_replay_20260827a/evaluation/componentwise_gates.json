@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "foreground_quality_definition": "absolute difference from GT foreground fraction; lower is better",
+  "non_degenerate_mean_foreground_ratio_range_inclusive": [
+    0.01,
+    10.0
+  ],
+  "all_non_sparseseg_models": {
+    "absolute_iou": {
+      "value": 0.023826868275002508,
+      "models": [
+        "COSEM-2D-UNet"
+      ],
+      "summary_field": "mean_absolute_iou"
+    },
+    "precision": {
+      "value": 0.029546712678328223,
+      "models": [
+        "COSEM-2D-UNet"
+      ],
+      "summary_field": "mean_precision"
+    },
+    "recall": {
+      "value": 0.1652634158802467,
+      "models": [
+        "COSEM-2D-UNet"
+      ],
+      "summary_field": "mean_recall"
+    },
+    "foreground_fraction_absolute_error": {
+      "value": 0.013606461474036852,
+      "models": [
+        "COSEM-3D-UNet"
+      ],
+      "summary_field": "mean_foreground_fraction_absolute_error"
+    }
+  },
+  "non_degenerate_non_sparseseg_models": {
+    "absolute_iou": {
+      "value": 0.023826868275002508,
+      "models": [
+        "COSEM-2D-UNet"
+      ],
+      "summary_field": "mean_absolute_iou"
+    },
+    "precision": {
+      "value": 0.029546712678328223,
+      "models": [
+        "COSEM-2D-UNet"
+      ],
+      "summary_field": "mean_precision"
+    },
+    "recall": {
+      "value": 0.1652634158802467,
+      "models": [
+        "COSEM-2D-UNet"
+      ],
+      "summary_field": "mean_recall"
+    },
+    "foreground_fraction_absolute_error": {
+      "value": 0.12013237297599105,
+      "models": [
+        "COSEM-2D-UNet"
+      ],
+      "summary_field": "mean_foreground_fraction_absolute_error"
+    }
+  },
+  "eligible_models": [
+    "COSEM-2D-UNet"
+  ],
+  "excluded_models": [
+    "COSEM-3D-UNet"
+  ]
+}

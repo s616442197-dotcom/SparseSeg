@@ -1,0 +1,74 @@
+data:
+  training_data: /mnt/c/baidunetdiskdownload/empanda/data/deepict_finetune/hela2_mito_100_1/data.csv
+  prediction_data: /mnt/c/baidunetdiskdownload/empanda/data/deepict_finetune/hela2_mito_100_1/data.csv
+  train_workdir: /mnt/c/baidunetdiskdownload/empanda/data/deepict_finetune/hela2_mito_100_1/work
+  output_dir: /mnt/c/baidunetdiskdownload/empanda/data/deepict_finetune/hela2_mito_100_1
+cluster:
+  logdir: logs
+preprocessing:
+  filtering:
+    active: false
+    target_spectrum: null
+    lowpass_cutoff: 350
+    smoothen_cutoff: 20
+  remapping:
+    active: true
+    mapping:
+      .: 0
+      0: 0
+      1: 1
+  slicing:
+    patch_size:
+    - 288
+    - 288
+    patch_dim:
+    - 9
+    - 5
+    z_cutoff: null
+    z_stride: 5
+    crop: 0
+training:
+  general:
+    normalize: true
+    lr: 0.0001
+    drop_empty: 1
+    batch_size: 8
+    n_filters: 4
+    flip: true
+    rotate: true
+  evaluation:
+    active: false
+    cv_folds: 5
+    epochs: 100
+    stopping_patience: 20
+    tensorboard: true
+    run_name: null
+    tf_logdir: ./logs
+    random_seed: 12345
+    save_models: true
+    model_dir: ./eval_models
+  production:
+    active: true
+    epochs: 25
+    model_output: /mnt/c/baidunetdiskdownload/empanda/data/deepict_finetune/hela2_mito_100_1/model.h5
+prediction:
+  active: true
+  model: /mnt/c/baidunetdiskdownload/empanda/data/deepict_finetune/hela2_mito_100_1/model.h5
+  normalize: true
+  crop: 48
+  compensate_crop: true
+  patch_size:
+  - 288
+  - 288
+  patch_dim:
+  - 9
+  - 5
+  z_cutoff: 200
+postprocessing:
+  active: false
+  sigma: 5
+  threshold: 0.5
+debug: false
+training_data: /mnt/c/baidunetdiskdownload/empanda/data/deepict_finetune/hela2_mito_100_1/data.csv
+prediction_data: /mnt/c/baidunetdiskdownload/empanda/data/deepict_finetune/hela2_mito_100_1/data.csv
+output_dir: /mnt/c/baidunetdiskdownload/empanda/data/deepict_finetune/hela2_mito_100_1

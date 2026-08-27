@@ -218,7 +218,9 @@ def smoothness_loss(pred_mask, input_image, edge_strength=1.0, eps=1e-6):
 
     # ---- Combine with edge-aware weights ----
     # 平滑区域(∇I 小 → dx_img≈1) → 惩罚更强；边缘区域(∇I 大 → dx_img≈0) → 惩罚弱
-    loss = ((1 - dx_img) * dx_pred + (1 - dy_img) * dy_pred).mean()
+    # Use exp(-|grad I|) directly. The former (1-weight) expression did the
+    # opposite of the documented edge-aware objective.
+    loss = (dx_img * dx_pred + dy_img * dy_pred).mean()
 
     return loss
 

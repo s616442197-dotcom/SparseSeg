@@ -1,0 +1,20 @@
+{
+  "start_utc": "2026-08-27T15:26:04.601687+00:00",
+  "end_utc": "2026-08-27T15:26:24.114422+00:00",
+  "evaluation_wall_clock_seconds": 19.512751065194607,
+  "paired_evaluation_wall_clock_seconds": 19.51261032745242,
+  "evaluated_prediction_count": 30,
+  "missing_prediction_count": 0,
+  "measured_prediction_timing_count": 0,
+  "unmeasured_prediction_timing_count": 30,
+  "unique_measured_model_run_count": 0,
+  "unique_shared_preprocessing_run_count": 0,
+  "total_measured_model_end_to_end_wall_clock_seconds": 0,
+  "supplemental_sparseseg_second_iteration_timing_path": "/mnt/nfs/data/home/sbw1996/vem_benchmark/cellmap_fixed_replay_20260827a/output/response/sparseseg_adaptive_iterated_v735/100_1/timing.json",
+  "supplemental_sparseseg_second_iteration": null,
+  "reviewer3_companion": {
+    "status": "failed",
+    "error": "ModuleNotFoundError(\"No module named 'reviewer3_companion'\")"
+  },
+  "note": "Totals de-duplicate shared prediction/timing paths. The supplemental SparseSeg number is one second-iteration measurement and is not a full-pipeline total."
+}

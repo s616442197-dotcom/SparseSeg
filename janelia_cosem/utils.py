@@ -550,6 +550,7 @@ def filter_connected_regions_shape(
     w_error=1.0,
     w_range=1.0,
     num_threshold=500,
+    candidate_cap="legacy",
 ):
     """
     根据 mask_label 的已标注区域形状特征，对 test_volume_label 中的候选区域进行打分排序，
@@ -568,6 +569,9 @@ def filter_connected_regions_shape(
         w_range: score2 权重，越大越重视与整体统计范围的偏离
         add_num: 至少比原始 mask 区域多选多少个
         expand_ratio: 至少扩张到原始 mask 区域数量的多少倍
+        candidate_cap: ``"legacy"`` 保留原先 500/100 上限；整数指定
+            固定上限；``None`` 不额外截断。优化 profile 使用 ``None``，
+            让 score cutoff 而不是旧的任意数量上限决定候选。
 
     返回:
         test_out: np.ndarray, [D,H,W], uint8
@@ -737,12 +741,17 @@ def filter_connected_regions_shape(
     score_cutoff = score_max - score_range * threshold
     target_num = int(np.sum(scores >= score_cutoff))
 
-    if num_mask < num_threshold:
-        add_num_max = 500
-    else:
-        add_num_max = 100
-
-    target_num = min(target_num, add_num_max)
+    if candidate_cap == "legacy":
+        if num_mask < num_threshold:
+            add_num_max = 500
+        else:
+            add_num_max = 100
+        target_num = min(target_num, add_num_max)
+    elif candidate_cap is not None:
+        candidate_cap = int(candidate_cap)
+        if candidate_cap < 1:
+            raise ValueError("candidate_cap must be positive, None, or 'legacy'")
+        target_num = min(target_num, candidate_cap)
     target_num = min(target_num, len(candidates))
 
     test_new = np.zeros_like(test_volume_label, dtype=np.uint8)

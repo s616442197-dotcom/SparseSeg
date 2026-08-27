@@ -393,7 +393,7 @@ def infer_volume_edges_patchwise(
     model,
     thickness=2,
     patch_size=160,
-    stride=120,
+    stride=None,
     batch_size=16,
     device="cuda",
     use_amp=True,
@@ -408,6 +408,20 @@ def infer_volume_edges_patchwise(
     4. 使用 torch.inference_mode()
     5. 可选 AMP 混合精度
     """
+
+    if patch_size <= 0:
+        raise ValueError(f"patch_size must be positive, got {patch_size}")
+    if stride is None:
+        # Derive overlap from the actual patch size. The historical fixed
+        # default (120) silently left gaps whenever callers used patch_size=80.
+        stride = max(1, patch_size // 2)
+    if stride <= 0:
+        raise ValueError(f"stride must be positive, got {stride}")
+    if stride > patch_size:
+        raise ValueError(
+            f"stride ({stride}) must not exceed patch_size ({patch_size}); "
+            "otherwise some pixels receive no prediction"
+        )
 
     D, F, H, W = feature_volume.shape
 
@@ -467,8 +481,12 @@ def infer_volume_edges_patchwise(
 
                 for bi, (x, y) in enumerate(batch_coords):
                     pred_slice[x:x + patch_size, y:y + patch_size] += probs[bi, 0]
-                    edge_slice[x:x + patch_size, y:y + patch_size] += probs[bi, 1]
+                    if probs.shape[1] > 1:
+                        edge_slice[x:x + patch_size, y:y + patch_size] += probs[bi, 1]
                     count_slice[x:x + patch_size, y:y + patch_size] += 1.0
+
+            if probs.shape[1] < 1:
+                raise ValueError("Model inference must return at least one output channel")
 
             pred_slice = pred_slice / count_slice.clamp_min(1.0)
             edge_slice = edge_slice / count_slice.clamp_min(1.0)

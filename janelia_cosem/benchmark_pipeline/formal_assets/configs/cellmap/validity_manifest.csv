@@ -1,0 +1,16 @@
+case_id,trial,roi_num,validity_mask,semantics
+100_1,100,1,../../paired_roi_masks/masks/cellmap_validity_all_voxels.tif,all_voxels_valid_native_baseline
+101_1,101,1,../../paired_roi_masks/masks/cellmap_validity_all_voxels.tif,all_voxels_valid_native_baseline
+102_1,102,1,../../paired_roi_masks/masks/cellmap_validity_all_voxels.tif,all_voxels_valid_native_baseline
+103_1,103,1,../../paired_roi_masks/masks/cellmap_validity_all_voxels.tif,all_voxels_valid_native_baseline
+104_1,104,1,../../paired_roi_masks/masks/cellmap_validity_all_voxels.tif,all_voxels_valid_native_baseline
+100_5,100,5,../../paired_roi_masks/masks/cellmap_validity_all_voxels.tif,all_voxels_valid_native_baseline
+101_5,101,5,../../paired_roi_masks/masks/cellmap_validity_all_voxels.tif,all_voxels_valid_native_baseline
+102_5,102,5,../../paired_roi_masks/masks/cellmap_validity_all_voxels.tif,all_voxels_valid_native_baseline
+103_5,103,5,../../paired_roi_masks/masks/cellmap_validity_all_voxels.tif,all_voxels_valid_native_baseline
+104_5,104,5,../../paired_roi_masks/masks/cellmap_validity_all_voxels.tif,all_voxels_valid_native_baseline
+100_10,100,10,../../paired_roi_masks/masks/cellmap_validity_all_voxels.tif,all_voxels_valid_native_baseline
+101_10,101,10,../../paired_roi_masks/masks/cellmap_validity_all_voxels.tif,all_voxels_valid_native_baseline
+102_10,102,10,../../paired_roi_masks/masks/cellmap_validity_all_voxels.tif,all_voxels_valid_native_baseline
+103_10,103,10,../../paired_roi_masks/masks/cellmap_validity_all_voxels.tif,all_voxels_valid_native_baseline
+104_10,104,10,../../paired_roi_masks/masks/cellmap_validity_all_voxels.tif,all_voxels_valid_native_baseline

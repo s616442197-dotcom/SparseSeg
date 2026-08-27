@@ -1,0 +1,81 @@
+{
+  "models": [
+    {
+      "name": "SparseSeg finetuning",
+      "python": "${VEM_PYTHON}",
+      "adapter": "model_adapters/run_sparseseg.py",
+      "args": ["--repo-root", "${VEMMODEL_ROOT}", "--variant", "finetuning"]
+    },
+    {
+      "name": "SparseSeg-ViT",
+      "python": "${VEM_PYTHON}",
+      "adapter": "model_adapters/run_sparseseg.py",
+      "args": ["--repo-root", "${VEMMODEL_ROOT}", "--variant", "vit"]
+    },
+    {
+      "name": "StarDist",
+      "python": "${STARDIST_PYTHON}",
+      "adapter": "model_adapters/run_stardist.py",
+      "args": []
+    },
+    {
+      "name": "MitoNet-Sparse-Finetuned",
+      "python": "${MITONET_PYTHON}",
+      "adapter": "model_adapters/run_mitonet.py",
+      "args": ["--repo-root", "${VEMMODEL_ROOT}", "--variant", "sparse_adapted",
+               "--base-config", "${MITONET_BASE_CONFIG}",
+               "--finetune-template", "${MITONET_FINETUNE_CONFIG}",
+               "--base-model", "${MITONET_MODEL}"]
+    },
+    {
+      "name": "MitoNet-Pretrained",
+      "python": "${MITONET_PYTHON}",
+      "adapter": "model_adapters/run_mitonet.py",
+      "args": ["--repo-root", "${VEMMODEL_ROOT}", "--variant", "pretrained",
+               "--base-config", "${MITONET_BASE_CONFIG}",
+               "--base-model", "${MITONET_MODEL}"]
+    },
+    {
+      "name": "DeePict",
+      "python": "${DEEPICT_PYTHON}",
+      "adapter": "model_adapters/run_deepict.py",
+      "args": ["--deepict-root", "${DEEPICT_ROOT}"]
+    },
+    {
+      "name": "COSEM-2D-UNet",
+      "python": "${CELLMAP_PYTHON}",
+      "adapter": "model_adapters/run_cosem_unet.py",
+      "args": ["--dimension", "2d"]
+    },
+    {
+      "name": "COSEM-3D-UNet",
+      "python": "${CELLMAP_PYTHON}",
+      "adapter": "model_adapters/run_cosem_unet.py",
+      "args": ["--dimension", "3d"]
+    },
+    {
+      "name": "Vanilla-UNet",
+      "python": "${VEM_PYTHON}",
+      "adapter": "model_adapters/run_sparse_baseline.py",
+      "args": ["--repo-root", "${VEMMODEL_ROOT}", "--variant", "vanilla_unet"]
+    },
+    {
+      "name": "nnU-Net",
+      "python": "${NNUNET_PYTHON}",
+      "adapter": "model_adapters/run_nnunetv2.py",
+      "args": ["--code-root", "${NNUNET_CODE_ROOT}", "--variant", "raw"]
+    },
+    {
+      "name": "Vanilla-UNet-SparseMatched",
+      "python": "${VEM_PYTHON}",
+      "adapter": "model_adapters/run_sparse_baseline.py",
+      "args": ["--repo-root", "${VEMMODEL_ROOT}", "--variant", "vanilla_unet_sparse_matched"]
+    },
+    {
+      "name": "nnU-Net-SparseMatched",
+      "python": "${NNUNET_PYTHON}",
+      "adapter": "model_adapters/run_nnunetv2.py",
+      "args": ["--code-root", "${NNUNET_CODE_ROOT}", "--variant", "sparse_matched"]
+    }
+  ]
+}
