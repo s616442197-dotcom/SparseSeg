@@ -21,7 +21,7 @@ MASK_MANIFEST = MASK_ROOT / "fixed_paired_roi_masks.json"
 DEFAULT_OUTPUT = ROOT / "formal_predictions"
 
 SCHEDULE = {
-    "SparseSeg finetuning": {"epochs": 60, "iterations": 3},
+    "SparseSeg": {"epochs": 60, "iterations": 3},
     "SparseSeg-ViT": {"epochs": 50, "iterations": 5},
     "StarDist": {"epochs": 50, "iterations": 1, "extra": ["--steps-per-epoch", "100"]},
     "MitoNet-Sparse-Finetuned": {"epochs": 8, "iterations": 1, "seed": 1337},
@@ -81,7 +81,7 @@ def output_path(root: Path, model: str, trial: int, roi: int) -> Path:
     case = f"{trial}_{roi}"
     stem = f"prediction_hela2_mito_{case}.tif"
     mapping = {
-        "SparseSeg finetuning": root / "response" / "sparseseg_adaptive_iterated_v735" / case / stem,
+        "SparseSeg": root / "response" / "sparseseg_adaptive_iterated_v735" / case / stem,
         "SparseSeg-ViT": root / "sparseseg_vit" / case / stem,
         "StarDist": root / "stardist" / stem,
         "MitoNet-Sparse-Finetuned": root / "mitonet_benchmark" / case / "masks" / "raw.tiff",

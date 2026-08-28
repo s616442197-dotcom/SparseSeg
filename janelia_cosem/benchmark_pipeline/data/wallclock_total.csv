@@ -4,7 +4,7 @@
 "DeePict","180.000000","original benchmark total training time","released_total_time","25"
 "MitoNet-Pretrained","22.883077","recorded prediction-run scope","measured",""
 "MitoNet-Sparse-Finetuned","83.758882","recorded prediction-run scope","measured",""
-"SparseSeg finetuning","3453.270622","three-iteration end-to-end run; queue gaps excluded; one measured trial 100 ROI 1 run","measured","180"
+"SparseSeg","3453.270622","three-iteration end-to-end run; queue gaps excluded; one measured trial 100 ROI 1 run","measured","180"
 "SparseSeg-ViT","1764.162805","recorded prediction-run scope","measured",""
 "StarDist","2211.257143","original benchmark total training time","released_total_time","50"
 "Vanilla-UNet","70.374132","recorded prediction-run scope","measured",""

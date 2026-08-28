@@ -22,7 +22,7 @@ HERE = Path(__file__).resolve().parent
 FONT_SIZE = 12
 ROI_NUMS = (1, 5, 10)
 MODELS = (
-    "SparseSeg finetuning",
+    "SparseSeg",
     "SparseSeg-ViT",
     "Vanilla-UNet",
     "Vanilla-UNet-SparseMatched",
@@ -41,7 +41,7 @@ FIG_ADD1_MODELS = tuple(
     if model not in ("Vanilla-UNet-SparseMatched", "nnU-Net-SparseMatched")
 )
 DISPLAY = {
-    "SparseSeg finetuning": "SparseSeg finetuning",
+    "SparseSeg": "SparseSeg",
     "SparseSeg-ViT": "SparseSeg-ViT",
     "Vanilla-UNet": "Vanilla U-Net raw",
     "Vanilla-UNet-SparseMatched": "Vanilla U-Net + sparse-matched",

@@ -83,7 +83,7 @@ class ModelSpec:
 def build_model_specs() -> List[ModelSpec]:
     return [
         ModelSpec(
-            "SparseSeg",
+            "SparseSeg-Legacy",
             ("{repo}/label_{celltype}_{organelle}_{trial}_{roi}_control/volume_mask_pred.tiff",),
             load_sparse_seg_pred,
             {"percentile_fraction": 0.95, "minimum_ratio": 0.3, "channel": 1},
@@ -114,7 +114,7 @@ def build_model_specs() -> List[ModelSpec]:
             False,
         ),
         ModelSpec(
-            "SparseSeg finetuning",
+            "SparseSeg",
             (
                 "{empanda}/response/sparseseg_adaptive_iterated_v735/"
                 "{trial}_{roi}/prediction_{celltype}_{organelle}_{trial}_{roi}.tif",

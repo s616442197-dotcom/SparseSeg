@@ -87,7 +87,7 @@ def main() -> None:
             "sparse_mask_template": "label_hela2_mito_{trial}_{roi}.tif",
         },
         "seed_policies": {
-            "SparseSeg_finetuning": "1400000 + trial*100 + roi_num + iteration_zero_based",
+            "SparseSeg": "1400000 + trial*100 + roi_num + iteration_zero_based",
             "Vanilla_UNet_and_nnUNet_controls": "trial*100 + roi_num",
             "MitoNet_sparse_adapted": 1337,
             "DeePiCt": 12345,
