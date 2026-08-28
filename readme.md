@@ -156,7 +156,7 @@ python prepare_formal_inputs.py --data-root "$FORMAL_DATA_ROOT"
 
 The downloader reads `em/fibsem-uint16/s3` and `labels/mito_seg/s3` from the public Janelia COSEM N5 store, transposes them to `(Z,H,W)=(200,1500,796)`, and checks the archived compression-independent logical SHA-256 values. The exact hashes and public paths are documented in `benchmark_pipeline/README.md` and `fixed_paired_roi_masks.json`.
 
-The explicit-negative input is author-generated rather than downloaded: open the same raw stack in Fiji/ImageJ, run `../preprocessing.ijm`, draw the requested negative ROIs, and use the saved `StackC.tif` as `negative_hela2_em_s3.tif`. For exact reproduction of the paper, use the author-generated negative mask supplied with Source Data; a newly drawn mask defines a new experiment. The staging command is:
+The explicit-negative input is generated from the same public raw stack: open it in Fiji/ImageJ, run `../preprocessing.ijm`, draw the requested negative ROIs, and use the saved `StackC.tif` as `negative_hela2_em_s3.tif`. Because the negative ROIs are an annotation choice, a newly generated mask follows the released preprocessing protocol but is not a byte-identical copy of the authors' annotation. The staging command is:
 
 ```bash
 python prepare_formal_inputs.py \
@@ -189,7 +189,7 @@ python ../evaluation_cross_trials_extreme.py \
   --strict
 ```
 
-The evaluator reports every trial's absolute IoU, precision, recall, predicted foreground fraction, historical log-normalized relative IoU, and available end-to-end wall-clock timing. See `janelia_cosem/benchmark_pipeline/README.md` for the exact 12 model names, separate environments, formal schedules, and optional subset commands.
+The evaluator reports every trial's absolute IoU, precision, recall, predicted foreground fraction, historical log-normalized relative IoU, and available wall-clock timing with its recorded measurement scope. Full train-to-output time is used where timestamped; legacy training-only records are identified explicitly. See `janelia_cosem/benchmark_pipeline/README.md` for the exact 12 model names, separate environments, formal schedules, and optional subset commands.
 
 ## Input Data Format
 

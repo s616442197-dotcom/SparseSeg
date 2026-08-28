@@ -110,8 +110,8 @@ def parse_args() -> argparse.Namespace:
         "--negative-from",
         type=Path,
         help=(
-            "Optional StackC.tif made by ../preprocessing.ijm, or the exact "
-            "negative mask from Source Data; it is copied to the formal filename."
+            "Optional StackC.tif generated from the public raw stack with "
+            "../preprocessing.ijm; it is copied to the formal filename."
         ),
     )
     parser.add_argument("--validate-only", action="store_true")
@@ -155,15 +155,14 @@ def main() -> None:
         validate_negative(negative)
     elif args.require_negative:
         raise FileNotFoundError(
-            f"{negative} is required. For exact replay copy the Source Data mask; "
-            "for a new annotation run ../preprocessing.ijm in Fiji/ImageJ and pass "
-            "its StackC.tif with --negative-from."
+            f"{negative} is required. Run ../preprocessing.ijm on the public raw "
+            "stack in Fiji/ImageJ and pass its StackC.tif with --negative-from."
         )
     else:
         print(
-            f"{negative} is not present. Raw/GT preparation is complete. For exact "
-            "replay copy the Source Data mask; for a new annotation create StackC.tif "
-            "with ../preprocessing.ijm and pass --negative-from."
+            f"{negative} is not present. Raw/GT preparation is complete. Create "
+            "StackC.tif from the public raw stack with ../preprocessing.ijm and "
+            "pass it with --negative-from."
         )
 
 

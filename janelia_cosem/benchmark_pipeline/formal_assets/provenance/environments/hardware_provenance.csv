@@ -1,10 +1,11 @@
 method_group,hardware,timing_scope,provenance
-legacy StarDist / DeePiCt,NVIDIA GeForce RTX 5080,legacy formal training timing,legacy workstation environment archive
-COSEM 2D U-Net,NVIDIA GeForce RTX 4090,fresh fixed-mask mean end-to-end per case,15 per-case timing.json files from Slurm array 5283
-COSEM 3D U-Net,NVIDIA GeForce RTX 4090,fresh fixed-mask mean end-to-end per case,15 per-case timing.json files from Slurm array 5284
-SparseSeg cases 100_1 through 102_5,NVIDIA GeForce RTX 4090,three-iteration end-to-end run,per-case execution and timing manifests
-SparseSeg cases 102_10 through 104_10,NVIDIA RTX A6000,three-iteration end-to-end run,per-case execution and timing manifests
-SparseSeg-ViT,NVIDIA GeForce RTX 4090,full five-iteration run,per-case run_manifest.json
-Vanilla U-Net raw / sparse-matched,NVIDIA GeForce RTX 4090,process start through prediction TIFF save,per-case timing.json
-nnU-Net raw / sparse-matched,NVIDIA GeForce RTX 4090,dataset conversion through evaluator-compatible export,per-case timing metadata
-MitoNet pretrained / sparse-adapted,NVIDIA GeForce RTX 4090,raw read through prediction TIFF save,per-case timing.json
+legacy StarDist / DeePiCt,NVIDIA GeForce RTX 5080,total training time only; inference and export were not separately timestamped,legacy workstation environment archive
+COSEM 2D U-Net,NVIDIA GeForce RTX 4090,after raw/sparse/negative TIFF reads through model import/setup; normalization; 100-epoch training; whole-volume inference; prediction TIFF and checkpoint writes; mean of 15 cases,15 per-case timing.json files from Slurm array 5283
+COSEM 3D U-Net,NVIDIA GeForce RTX 4090,after raw/sparse/negative TIFF reads through model import/setup; normalization; 100-epoch training; whole-volume inference; prediction TIFF and checkpoint writes; mean of 15 cases,15 per-case timing.json files from Slurm array 5284
+SparseSeg cases 100_1 through 102_5,NVIDIA GeForce RTX 4090,sum of iterations 0-2: training; post-training whole-volume inference; iterative-mask generation when applicable; label update and output writes; scheduler queue gaps excluded,per-case execution and timing manifests
+SparseSeg cases 102_10 through 104_10,NVIDIA RTX A6000,sum of iterations 0-2: training; post-training whole-volume inference; iterative-mask generation when applicable; label update and output writes; scheduler queue gaps excluded,per-case execution and timing manifests
+SparseSeg-ViT,NVIDIA GeForce RTX 4090,five iterations including training; prediction; refinement and output writes; scheduler queue excluded,per-case run_manifest.json
+Vanilla U-Net raw / sparse-matched,NVIDIA GeForce RTX 4090,data loading and preprocessing through training; checkpoint save; whole-volume inference and prediction TIFF write,per-case timing.json
+nnU-Net raw / sparse-matched,NVIDIA GeForce RTX 4090,dataset conversion through official planning/preprocessing; 50-epoch training; whole-volume inference and evaluator-compatible export,per-case timing metadata
+MitoNet pretrained,NVIDIA GeForce RTX 4090,raw TIFF read and config materialization through pretrained whole-volume inference and prediction TIFF write; no training,per-case timing.json
+MitoNet sparse-adapted,NVIDIA GeForce RTX 4090,raw/label read and dataset materialization through 8-epoch adaptation; whole-volume inference and prediction TIFF write; environment/checkpoint setup excluded,per-case timing.json

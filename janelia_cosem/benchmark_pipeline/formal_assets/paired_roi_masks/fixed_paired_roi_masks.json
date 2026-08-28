@@ -45,7 +45,7 @@
     },
     "explicit_negative_provenance": {
       "generator": "janelia_cosem/preprocessing.ijm (StackC.tif)",
-      "exact_replay": "copy the author-generated mask from the accompanying Source Data",
+      "preparation": "generate StackC.tif from the cited public raw stack with preprocessing.ijm",
       "validation": "shape is fixed; logical binary SHA-256 is printed by the formal runner"
     }
   },

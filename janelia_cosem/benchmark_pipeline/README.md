@@ -10,7 +10,7 @@ This folder is the maintained Reviewer 3 reproduction interface. It supports thr
 
 - `data/benchmark_metrics.csv`: 12 models x 5 seeds x 3 ROI budgets (180 rows).
 - `data/time_per_epoch.csv`: per-epoch timings used by `Fig_add1_v3.pdf`.
-- `data/wallclock_total.csv`: total end-to-end wall-clock values used by `Fig_add_more1_v3.pdf`.
+- `data/wallclock_total.csv`: total recorded wall-clock values and explicit measurement scopes used by `Fig_add_more1_v3.pdf`.
 - `outputs/`: the two released reviewer figures.
 - `example_data/`: tracked `(16, 256, 256)` raw, dense GT, sparse-positive and explicit-negative TIFFs.
 - `model_adapters/`: the common CLI contract for all 12 models.
@@ -158,7 +158,7 @@ python prepare_formal_inputs.py --data-root "$FORMAL_DATA_ROOT"
 | `hela2_em_s3.tif` | `em/fibsem-uint16/s3` | `uint16` | `1551fc1532e34aacba6cf7f3cf1b68bb473db1a4cdac74e668ce36e09192716a` |
 | `hela2_mito_s3.tif` | `labels/mito_seg/s3` | `uint8` | `0f3e252e49c7a063227d0ab24d2cc5ab936f6189cedfe1a7b2d50490bf310d44` |
 
-`negative_hela2_em_s3.tif` is not a downloaded COSEM label. It is the author-defined background annotation created from the same raw stack with `../preprocessing.ijm`: after positive ROIs are recorded, the macro asks for negative ROIs, fills them into the zero-valued `StackC`, and saves `StackC.tif`. For the paper's exact numerical replay, copy the released `negative_hela2_em_s3.tif` from the accompanying Source Data. To create a new/custom background annotation, run the macro in Fiji/ImageJ and stage its output with:
+`negative_hela2_em_s3.tif` is not a downloaded COSEM label. It is an explicit background annotation generated from the same public raw stack with `../preprocessing.ijm`: after positive ROIs are recorded, the macro asks for negative ROIs, fills them into the zero-valued `StackC`, and saves `StackC.tif`. Run the macro in Fiji/ImageJ and stage its output with:
 
 ```bash
 python prepare_formal_inputs.py \
@@ -167,7 +167,7 @@ python prepare_formal_inputs.py \
   --require-negative
 ```
 
-The command validates the shape and prints a compression-independent binary logical hash. A newly drawn `StackC.tif` defines a new experiment; it is not expected to reproduce the paper's exact numbers.
+The command validates the shape and prints a compression-independent binary logical hash. Because negative ROIs are an annotation choice, a newly generated `StackC.tif` reproduces the documented preprocessing protocol but is not a byte-identical copy of the authors' annotation.
 
 The full raw, dense evaluation-only GT and explicit-negative volume are not duplicated in Git. Place them under one directory with exact names:
 
@@ -237,8 +237,8 @@ python plot_benchmark_figures.py \
 The plotting code validates table schemas and row counts before drawing:
 
 - `Fig_add1_v3.pdf`: 10 models, relative IoU and time/epoch, excluding both sparse-matched controls and including the dashed MitoNet-pretrained median.
-- `Fig_add_more1_v3.pdf`: all 12 models, relative IoU, absolute IoU, precision, recall, predicted foreground fraction and total end-to-end wall-clock.
+- `Fig_add_more1_v3.pdf`: all 12 models, relative IoU, absolute IoU, precision, recall, predicted foreground fraction and scope-labelled total recorded wall-clock.
 
 ## Timing provenance
 
-Wall-clock values are end-to-end within the recorded run scope and exclude scheduler queue delay. The released measurements include multiple GPU types, so they describe computational cost and are not hardware-normalized speed rankings. Hardware and environment records are under `formal_assets/provenance/environments/`.
+Wall-clock values exclude scheduler queue delay and carry an explicit measurement boundary in `data/wallclock_total.csv`. Full train-to-output time is reported where timestamped. The pretrained MitoNet entry is inference-only, and the legacy StarDist and DeePiCt entries are total training-time records because their inference/export stages were not separately timestamped. The released measurements include multiple GPU types, so they describe computational cost and are not hardware-normalized speed rankings. Hardware and environment records are under `formal_assets/provenance/environments/`.
