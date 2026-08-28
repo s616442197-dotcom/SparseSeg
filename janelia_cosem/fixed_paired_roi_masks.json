@@ -1,0 +1,285 @@
+{
+  "schema_version": 2,
+  "experiment": "formal 5 training-seed replicates x 3 fixed ROI budgets",
+  "independent_volume": "HeLa2 COSEM volume",
+  "pairing_definition": "For a given trial and ROI budget every trainable method receives the same sparse-mask TIFF; trials 100-104 differ by training seed.",
+  "statistical_unit_warning": "The released formal benchmark has 15 case rows but only three unique sparse masks. Trials 100-104 are training-seed replicates, not independent ROI-mask selections or independent biological volumes.",
+  "trial_ids": [
+    100,
+    101,
+    102,
+    103,
+    104
+  ],
+  "roi_budgets": [
+    1,
+    5,
+    10
+  ],
+  "unique_sparse_mask_count": 3,
+  "input_contract": {
+    "raw": "hela2_em_s3.tif",
+    "dense_ground_truth_evaluation_only": "hela2_mito_s3.tif",
+    "explicit_negative": "negative_hela2_em_s3.tif",
+    "sparse_mask_template": "label_hela2_mito_{trial}_{roi}.tif"
+  },
+  "seed_policies": {
+    "SparseSeg_finetuning": "1400000 + trial*100 + roi_num + iteration_zero_based",
+    "Vanilla_UNet_and_nnUNet_controls": "trial*100 + roi_num",
+    "MitoNet_sparse_adapted": 1337,
+    "DeePiCt": 12345,
+    "CellMap_COSEM_2D_3D": 42,
+    "StarDist_formal_replay": "trial*100 + roi_num (legacy run did not record an explicit seed)"
+  },
+  "masks": {
+    "1": {
+      "asset": "masks/paired_roi_1.tif",
+      "shape_zyx": [
+        200,
+        1500,
+        796
+      ],
+      "foreground_voxels": 303,
+      "logical_uint8_sha256": "ee5d9daf7b9d93b21bd7c7284ddf2cc7043beee42f4f58efe8ca7814239a629a",
+      "compressed_tiff_sha256": "88f8e8ff4db3e99477eaa0645a75ba6a3476b0372acde64860df03a958be311d"
+    },
+    "5": {
+      "asset": "masks/paired_roi_5.tif",
+      "shape_zyx": [
+        200,
+        1500,
+        796
+      ],
+      "foreground_voxels": 1432,
+      "logical_uint8_sha256": "71b55ee72e8e9aa5ebed81d01317ea8ebe005fc6b548d4b93c269d737cd3e48b",
+      "compressed_tiff_sha256": "bec1beeb03b0133e9406b8f0c2174df048f33e65d4a05b5f6806270524866a86"
+    },
+    "10": {
+      "asset": "masks/paired_roi_10.tif",
+      "shape_zyx": [
+        200,
+        1500,
+        796
+      ],
+      "foreground_voxels": 2358,
+      "logical_uint8_sha256": "a4134806d57d0bce8e0969fa51a577780df1a6c061a2656a67931b465b7dba37",
+      "compressed_tiff_sha256": "fad100666a0b54f3f6b5d33fc63bec2f3fbfd3e817801fda93acf30ac64f7ce4"
+    }
+  },
+  "cellmap_validity": {
+    "asset": "masks/cellmap_validity_all_voxels.tif",
+    "semantics": "all voxels valid; this reproduces the native legacy CellMap baseline, where unlabeled voxels were treated as background"
+  },
+  "rows": [
+    {
+      "case_id": "100_1",
+      "trial": 100,
+      "roi_num": 1,
+      "mask_asset": "masks/paired_roi_1.tif",
+      "installed_sparse_filename": "label_hela2_mito_100_1.tif",
+      "source_uncompressed_tiff_sha256": "4a97f9f1426cde6bbe838a30e13ba7c018ab3042c938c3f322a90d5e3067a482",
+      "training_seed": 10001,
+      "sparseseg_iteration_seeds": [
+        1410001,
+        1410002,
+        1410003
+      ]
+    },
+    {
+      "case_id": "101_1",
+      "trial": 101,
+      "roi_num": 1,
+      "mask_asset": "masks/paired_roi_1.tif",
+      "installed_sparse_filename": "label_hela2_mito_101_1.tif",
+      "source_uncompressed_tiff_sha256": "4a97f9f1426cde6bbe838a30e13ba7c018ab3042c938c3f322a90d5e3067a482",
+      "training_seed": 10101,
+      "sparseseg_iteration_seeds": [
+        1410101,
+        1410102,
+        1410103
+      ]
+    },
+    {
+      "case_id": "102_1",
+      "trial": 102,
+      "roi_num": 1,
+      "mask_asset": "masks/paired_roi_1.tif",
+      "installed_sparse_filename": "label_hela2_mito_102_1.tif",
+      "source_uncompressed_tiff_sha256": "4a97f9f1426cde6bbe838a30e13ba7c018ab3042c938c3f322a90d5e3067a482",
+      "training_seed": 10201,
+      "sparseseg_iteration_seeds": [
+        1410201,
+        1410202,
+        1410203
+      ]
+    },
+    {
+      "case_id": "103_1",
+      "trial": 103,
+      "roi_num": 1,
+      "mask_asset": "masks/paired_roi_1.tif",
+      "installed_sparse_filename": "label_hela2_mito_103_1.tif",
+      "source_uncompressed_tiff_sha256": "4a97f9f1426cde6bbe838a30e13ba7c018ab3042c938c3f322a90d5e3067a482",
+      "training_seed": 10301,
+      "sparseseg_iteration_seeds": [
+        1410301,
+        1410302,
+        1410303
+      ]
+    },
+    {
+      "case_id": "104_1",
+      "trial": 104,
+      "roi_num": 1,
+      "mask_asset": "masks/paired_roi_1.tif",
+      "installed_sparse_filename": "label_hela2_mito_104_1.tif",
+      "source_uncompressed_tiff_sha256": "4a97f9f1426cde6bbe838a30e13ba7c018ab3042c938c3f322a90d5e3067a482",
+      "training_seed": 10401,
+      "sparseseg_iteration_seeds": [
+        1410401,
+        1410402,
+        1410403
+      ]
+    },
+    {
+      "case_id": "100_5",
+      "trial": 100,
+      "roi_num": 5,
+      "mask_asset": "masks/paired_roi_5.tif",
+      "installed_sparse_filename": "label_hela2_mito_100_5.tif",
+      "source_uncompressed_tiff_sha256": "bab094435645cba1d262f36baf01f6beee2c413172604a39a08d6f716d6fe74a",
+      "training_seed": 10005,
+      "sparseseg_iteration_seeds": [
+        1410005,
+        1410006,
+        1410007
+      ]
+    },
+    {
+      "case_id": "101_5",
+      "trial": 101,
+      "roi_num": 5,
+      "mask_asset": "masks/paired_roi_5.tif",
+      "installed_sparse_filename": "label_hela2_mito_101_5.tif",
+      "source_uncompressed_tiff_sha256": "bab094435645cba1d262f36baf01f6beee2c413172604a39a08d6f716d6fe74a",
+      "training_seed": 10105,
+      "sparseseg_iteration_seeds": [
+        1410105,
+        1410106,
+        1410107
+      ]
+    },
+    {
+      "case_id": "102_5",
+      "trial": 102,
+      "roi_num": 5,
+      "mask_asset": "masks/paired_roi_5.tif",
+      "installed_sparse_filename": "label_hela2_mito_102_5.tif",
+      "source_uncompressed_tiff_sha256": "bab094435645cba1d262f36baf01f6beee2c413172604a39a08d6f716d6fe74a",
+      "training_seed": 10205,
+      "sparseseg_iteration_seeds": [
+        1410205,
+        1410206,
+        1410207
+      ]
+    },
+    {
+      "case_id": "103_5",
+      "trial": 103,
+      "roi_num": 5,
+      "mask_asset": "masks/paired_roi_5.tif",
+      "installed_sparse_filename": "label_hela2_mito_103_5.tif",
+      "source_uncompressed_tiff_sha256": "bab094435645cba1d262f36baf01f6beee2c413172604a39a08d6f716d6fe74a",
+      "training_seed": 10305,
+      "sparseseg_iteration_seeds": [
+        1410305,
+        1410306,
+        1410307
+      ]
+    },
+    {
+      "case_id": "104_5",
+      "trial": 104,
+      "roi_num": 5,
+      "mask_asset": "masks/paired_roi_5.tif",
+      "installed_sparse_filename": "label_hela2_mito_104_5.tif",
+      "source_uncompressed_tiff_sha256": "bab094435645cba1d262f36baf01f6beee2c413172604a39a08d6f716d6fe74a",
+      "training_seed": 10405,
+      "sparseseg_iteration_seeds": [
+        1410405,
+        1410406,
+        1410407
+      ]
+    },
+    {
+      "case_id": "100_10",
+      "trial": 100,
+      "roi_num": 10,
+      "mask_asset": "masks/paired_roi_10.tif",
+      "installed_sparse_filename": "label_hela2_mito_100_10.tif",
+      "source_uncompressed_tiff_sha256": "71750482d5c0f4d337d7b7e76bc55dad6e9d0e81f0ef9d5e6c46b7202a041568",
+      "training_seed": 10010,
+      "sparseseg_iteration_seeds": [
+        1410010,
+        1410011,
+        1410012
+      ]
+    },
+    {
+      "case_id": "101_10",
+      "trial": 101,
+      "roi_num": 10,
+      "mask_asset": "masks/paired_roi_10.tif",
+      "installed_sparse_filename": "label_hela2_mito_101_10.tif",
+      "source_uncompressed_tiff_sha256": "71750482d5c0f4d337d7b7e76bc55dad6e9d0e81f0ef9d5e6c46b7202a041568",
+      "training_seed": 10110,
+      "sparseseg_iteration_seeds": [
+        1410110,
+        1410111,
+        1410112
+      ]
+    },
+    {
+      "case_id": "102_10",
+      "trial": 102,
+      "roi_num": 10,
+      "mask_asset": "masks/paired_roi_10.tif",
+      "installed_sparse_filename": "label_hela2_mito_102_10.tif",
+      "source_uncompressed_tiff_sha256": "71750482d5c0f4d337d7b7e76bc55dad6e9d0e81f0ef9d5e6c46b7202a041568",
+      "training_seed": 10210,
+      "sparseseg_iteration_seeds": [
+        1410210,
+        1410211,
+        1410212
+      ]
+    },
+    {
+      "case_id": "103_10",
+      "trial": 103,
+      "roi_num": 10,
+      "mask_asset": "masks/paired_roi_10.tif",
+      "installed_sparse_filename": "label_hela2_mito_103_10.tif",
+      "source_uncompressed_tiff_sha256": "71750482d5c0f4d337d7b7e76bc55dad6e9d0e81f0ef9d5e6c46b7202a041568",
+      "training_seed": 10310,
+      "sparseseg_iteration_seeds": [
+        1410310,
+        1410311,
+        1410312
+      ]
+    },
+    {
+      "case_id": "104_10",
+      "trial": 104,
+      "roi_num": 10,
+      "mask_asset": "masks/paired_roi_10.tif",
+      "installed_sparse_filename": "label_hela2_mito_104_10.tif",
+      "source_uncompressed_tiff_sha256": "71750482d5c0f4d337d7b7e76bc55dad6e9d0e81f0ef9d5e6c46b7202a041568",
+      "training_seed": 10410,
+      "sparseseg_iteration_seeds": [
+        1410410,
+        1410411,
+        1410412
+      ]
+    }
+  ]
+}

@@ -8,7 +8,6 @@ from common import (add_standard_arguments, check_inputs, find_one, normalize_pr
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     add_standard_arguments(parser)
-    parser.add_argument("--repo-root", type=Path, required=True)
     parser.add_argument("--variant", choices=("vanilla_unet", "vanilla_unet_sparse_matched"),
                         required=True)
     parser.add_argument("--num-samples", type=int, default=32)
@@ -18,9 +17,12 @@ def main() -> None:
     started = time.perf_counter()
     data_root = stage_vem_names(args.raw, args.sparse_label, args.negative_label,
                                 args.work_dir / "inputdata", args.trial, args.roi_num)
-    nested = args.repo_root / "vemmodel" / "janelia_cosem" / "benchamark" / "sparse_baseline_benchmark.py"
-    flat = args.repo_root / "sparse_baseline_benchmark.py"
-    script = nested if nested.is_file() else flat
+    script = (
+        Path(__file__).resolve().parents[1]
+        / "formal_runners"
+        / "vanilla_unet"
+        / "sparse_baseline_benchmark.py"
+    )
     if not script.is_file():
         raise FileNotFoundError(script)
     result_root = args.work_dir / "runner_output"

@@ -83,26 +83,20 @@ pip install -r requirements.txt
 
 For a quick test, place your raw cryo-vEM TIFF file and the corresponding sparse positive-label TIFF file into the `inputdata` directory.
 
-The directory can be organized as:
+The minimal user-data layout is:
 
 ```text
 SparseSeg/
 ├── inputdata/
 │   ├── raw.tif
 │   └── sparse_positive_label.tif
-├── benchmark/
-│   ├── test_extreme.py
-│   ├── test_ablation.py
-│   ├── test_star.py
-│   ├── train.sh
-│   ├── run_deepict_finetune_batch.sh
-│   ├── 2dtraining.py
-│   └── 3dtraining.py
-├── test_prediction.py
-├── segment_cell.py
-└── ...
+├── janelia_cosem/
+│   ├── segment_cell.py
+│   ├── adaptive_iterated_mask.py
+│   ├── test_prediction.py
+│   └── benchmark_pipeline/
+└── readme.md
 ```
-
 Then run:
 
 ```bash
@@ -117,187 +111,54 @@ The output prediction masks and intermediate results will be saved to the output
 
 ## Reproducing Paper Experiments
 
-> **Reviewer 3 benchmark entry points.** The historical directory name
-> `janelia_cosem/benchamark/` is retained for compatibility. Start with
-> `README_EXTREME_BENCHMARKS.md` in that directory. It explains how to create
-> isolated Python environments, install CUDA-enabled PyTorch and the common
-> scientific packages, and install the separate MitoNet/Empanada and official
-> nnU-Net v2 dependencies for the reported nnU-Net controls. No particular filesystem layout or job
-> scheduler is required.
->
-> Configure `--data-root` and `--output-root` for your machine and run the
-> Python benchmark entry point once for each trial/ROI pair. The shell files in
-> `benchamark/` record the experiment configurations used in the study, but
-> users may invoke the underlying Python commands directly or adapt them to
-> their own batch system. After predictions are placed in the documented output
-> layout, run `python janelia_cosem/evaluation_cross_trials_extreme.py` with no
-> arguments. It writes per-trial absolute IoU, precision, recall, predicted
-> foreground fraction, historical log-normalized relative IoU, and
-> de-duplicated end-to-end timing summaries. The relative-IoU definition is
-> `ln(1 + 100 * IoU) / D`, where `D` is the maximum transformed IoU across all
-> model/trial/ROI rows included in that evaluation run.
->
-> The historical local `nnunet_2d` options in
-> `sparse_baseline_benchmark.py` are retained only as legacy PlainConv2D audit
-> code and are not reported as nnU-Net. The current benchmark uses the
-> pip-installed official `nnunetv2==2.8.1` planner, preprocessor, trainer,
-> checkpoint and predictor in `benchamark/nnunetv2_official/`.
+The maintained Reviewer 3 interface is `janelia_cosem/benchmark_pipeline/`. All benchmark reproduction commands below use the tracked formal runner, evaluator, and CSV plotting workflow.
 
-In addition to the quick prediction example, we provide separate scripts for reproducing the main SparseSeg experiments and benchmark analyses reported in the paper.
+The formal package contains:
 
-The benchmark scripts used for the experiments reported in the paper are provided in the `benchmark/` folder. Each benchmark model may require its own software environment, because the compared methods depend on different packages and frameworks. Users should activate the corresponding environment before running each script.
+- `run_formal_benchmark.py`: expands the fixed 12-model x 15-case grid and writes evaluator-compatible predictions;
+- `run_benchmark_pipeline.py`: runs the small one-epoch interface example or redraws figures from released CSV tables;
+- `README.md`: model-specific installation, environment, input, timing, and output instructions;
+- `formal_assets/paired_roi_masks/fixed_paired_roi_masks.json`: the paired ROI masks, seeds, and logical hashes used by the formal runs.
 
-Before running any benchmark script, users should check and modify the input paths, output paths, dataset names, and model-specific settings inside the corresponding script according to their local data organization.
-
----
-
-### 1. Extreme sparse-annotation benchmark
-
-The ROI-level sparse benchmark using 1, 5, and 10 positive ROIs can be reproduced using:
+Install the orchestration and plotting dependencies, then enter the maintained folder:
 
 ```bash
-python janelia_cosem/test_extreme.py
+python -m pip install -r janelia_cosem/benchmark_pipeline/requirements.txt
+cd janelia_cosem/benchmark_pipeline
 ```
 
-This script evaluates SparseSeg under extreme sparse-annotation settings, corresponding to the benchmark in which only 1, 5, or 10 sparse positive ROIs are used as supervision.
-
-Before running, users should check and modify the input paths inside `janelia_cosem/test_extreme.py`, for example:
-
-```python
-RAW_PATH = "path/to/raw_volume.tif"
-MASK_PATH = "path/to/sparse_positive_label.tif"
-OUTPUT_DIR = "path/to/output_folder"
-```
-
-Depending on the benchmark configuration, users may also modify the tested ROI numbers, random seeds, target structures, and number of repeats.
-
-The script saves prediction masks, intermediate refinement results, and evaluation summaries to the configured output directory.
-
----
-
-### 2. Ablation experiments
-
-The ablation experiments can be reproduced using:
+Redraw both released reviewer figures without model environments or raw data:
 
 ```bash
-python janelia_cosem/test_ablation.py
+python run_benchmark_pipeline.py --plots-only
 ```
 
-This script reproduces the parameter and architecture ablation analyses reported in the paper, including tests for:
-
-- shape-refinement threshold
-- boundary / edge IoU filtering threshold
-- low-weight coefficient
-- kernel-size configuration
-- number of kernels
-
-Before running, users should check and modify the input paths inside `janelia_cosem/test_ablation.py`, for example:
-
-```python
-RAW_PATH = "path/to/raw_volume.tif"
-MASK_PATH = "path/to/sparse_positive_label.tif"
-OUTPUT_DIR = "path/to/output_folder"
-```
-
-The output files include prediction masks, intermediate refinement results, and quantitative evaluation tables for different parameter settings.
-
----
-
-### 3. Full iterative SparseSeg experiment
-
-For full iterative training and prediction on a user-defined dataset, run:
+After installing the model-specific environments described in `benchmark_pipeline/README.md`, run the packaged one-epoch interface check:
 
 ```bash
-cd janelia_cosem
-
-python iterative_bash.py \
-    --raw_name "${your_raw_name}" \
-    --mask_name "${your_mask_name}" \
-    --folder_name "${your_folder_name}" \
-    --patch_scale 80 \
-    --sparsity_weight 0.5 \
-    --z_threshold 10 \
-    --iou_thresh 0.6 \
-    --threshold 0.9 \
-    --area_coef 1.0 \
-    --edge_coef 1.0 \
-    --negative_threshold 3 \
-    --low_weight_coeff 200 \
-    --num_iterations 5
+python run_benchmark_pipeline.py --epochs 1
 ```
 
-This command performs iterative training, prediction, geometry-based refinement, and pseudo-label expansion.
-
----
-
-### 4. Benchmark scripts for paper results
-
-The paper compares SparseSeg with several external segmentation frameworks, including MitoNet, nnU-Net, COSEM / CellMap 2D and 3D U-Net, StarDist, DeePiCt, and SparseSeg-ViT.
-
-The main benchmark scripts include:
-
-| Benchmark | Script | Description |
-| --------- | ------ | ----------- |
-| SparseSeg extreme sparse benchmark | `janelia_cosem/test_extreme.py` | Reproduces the 1, 5, and 10 ROI sparse-annotation benchmark for SparseSeg |
-| SparseSeg ablation experiments | `janelia_cosem/test_ablation.py` | Reproduces the ablation experiments for shape threshold, edge IoU threshold, low-weight coefficient, and kernel configuration |
-| StarDist benchmark | `janelia_cosem/benchamark/test_star.py` | Trains and evaluates StarDist3D on the same sparse-label benchmark settings |
-| DeePiCt benchmark | `janelia_cosem/benchamark/run_deepict_finetune_batch.sh` | Runs DeePiCt fine-tuning and prediction for the sparse-label benchmark |
-| COSEM / CellMap 2D U-Net benchmark | `janelia_cosem/benchamark/2dtraining.py` | Trains and predicts using a 2D U-Net baseline |
-| COSEM / CellMap 3D U-Net benchmark | `janelia_cosem/benchamark/3dtraining.py` | Trains a 3D U-Net baseline |
-| nnU-Net v2 raw and sparse-matched controls | `janelia_cosem/benchamark/nnunetv2_official/submit_official_nnunetv2_pipeline.sh` | Runs official nnU-Net v2 data conversion, planning, preprocessing, training, checkpointing and whole-volume prediction |
-
-These scripts are intended to reproduce the benchmark settings reported in the paper when the same input volumes, sparse labels, and random seeds are used.
-
----
-
-### 5. Running third-party benchmark models
-
-For third-party methods, users should install the corresponding official software environments before running the benchmark scripts.
-
-Recommended environments include:
-
-| Method | Recommended environment |
-| ------ | ----------------------- |
-| StarDist | StarDist / TensorFlow environment |
-| DeePiCt | DeePiCt official environment |
-| nnU-Net | nnU-Net v2 environment |
-| COSEM / CellMap 2D and 3D U-Net | CellMap segmentation challenge environment |
-| MitoNet | Official empanada-napari environment |
-
-For StarDist, DeePiCt, nnU-Net, and COSEM / CellMap U-Net baselines, the corresponding benchmark scripts are provided in the `benchmark/` folder. Users should activate the required environment and then run the corresponding script.
-
-For example:
+For the formal experiment, place the full raw volume, dense evaluation-only GT, and explicit-negative mask in `FORMAL_DATA_ROOT`, install the released fixed ROI masks, validate them, and expand the complete command grid:
 
 ```bash
-# StarDist benchmark
-conda activate stardist_env
-python janelia_cosem/benchamark/test_star.py
-
-# DeePiCt benchmark
-conda activate deepict_env
-bash janelia_cosem/benchamark/run_deepict_finetune_batch.sh
-
-# official nnU-Net v2 benchmark (Slurm example)
-python -m venv nnunetv2_official
-nnunetv2_official/bin/python -m pip install nnunetv2==2.8.1
-bash janelia_cosem/benchamark/nnunetv2_official/submit_official_nnunetv2_pipeline.sh
-
-# COSEM / CellMap 2D U-Net benchmark
-conda activate cellmap_env
-python janelia_cosem/benchamark/2dtraining.py
-
-# COSEM / CellMap 3D U-Net benchmark
-conda activate cellmap_env
-python janelia_cosem/benchamark/3dtraining.py
+python formal_assets/paired_roi_masks/install_formal_masks.py --data-root "$FORMAL_DATA_ROOT"
+python run_formal_benchmark.py --data-root "$FORMAL_DATA_ROOT" --validate-only
+python run_formal_benchmark.py --data-root "$FORMAL_DATA_ROOT" --output-root formal_predictions --dry-run
+python run_formal_benchmark.py --data-root "$FORMAL_DATA_ROOT" --output-root formal_predictions
 ```
 
-MitoNet was evaluated using the official empanada-napari implementation. To reproduce the MitoNet benchmark, users should install the official empanada-napari plugin, load the pretrained `MitoNet_v1` model, and run inference using the parameter settings reported in the Appendix of the paper. The resulting prediction TIFF files can then be evaluated using the same IoU-based evaluation scripts used for the other benchmark models.
+Evaluate the formal prediction layout with the tracked evaluator:
 
-Because different benchmark models use different training pipelines and input formats, some scripts perform format conversion automatically. For example, the DeePiCt benchmark converts TIFF volumes and labels into MRC format before training and converts the predicted MRC files back to TIFF for evaluation. The official nnU-Net v2 entry point creates its Tiff3DIO datasets, runs fingerprint extraction and planning, and writes evaluator-compatible binary TIFF predictions automatically.
+```bash
+python ../evaluation_cross_trials_extreme.py \
+  --gt-path "$FORMAL_DATA_ROOT/hela2_mito_s3.tif" \
+  --empanda-root formal_predictions \
+  --output-dir formal_predictions/evaluation_cross_trials_extreme \
+  --strict
+```
 
-All benchmark outputs should be saved as TIFF prediction masks or converted into TIFF format before quantitative evaluation. The same evaluation scripts can then be used to compute IoU, normalized relative IoU, and other summary statistics reported in the paper.
-
----
+The evaluator reports every trial's absolute IoU, precision, recall, predicted foreground fraction, historical log-normalized relative IoU, and available end-to-end wall-clock timing. See `janelia_cosem/benchmark_pipeline/README.md` for the exact 12 model names, separate environments, formal schedules, and optional subset commands.
 
 ## Input Data Format
 
@@ -428,21 +289,17 @@ The experiments reported in the paper were performed on a workstation with the f
 
 A CUDA-enabled GPU is recommended for reproducing the benchmark experiments. In practice, a GPU with at least 12--16 GB VRAM is recommended for training and inference on large vEM volumes.
 
-Approximate runtime depends on the volume size, patch scale, number of training iterations, and number of benchmark settings. As a rough guide:
+Approximate runtime depends on volume size, patch sampling, model family, and iteration count:
 
-| Experiment | Script | Approximate runtime |
-| ---------- | ------ | ------------------- |
-| Quick prediction on one small volume | `test_prediction.py` | tens of minutes |
-| Full iterative SparseSeg run | `iterative_bash.py` | tens of minutes to a few hours per dataset |
-| Extreme sparse-annotation benchmark | `janelia_cosem/test_extreme.py` | several hours depending on ROI settings and repeats |
-| Ablation experiments | `janelia_cosem/test_ablation.py` | several hours to overnight depending on the number of tested parameters |
-| StarDist benchmark | `janelia_cosem/benchamark/test_star.py` | several hours depending on volume size and number of repeats |
-| DeePiCt benchmark | `janelia_cosem/benchamark/run_deepict_finetune_batch.sh` | several hours to overnight depending on the number of ROI settings |
-| nnU-Net benchmark | `janelia_cosem/benchamark/train.sh` | several hours to more than one day depending on dataset size |
-| COSEM / CellMap U-Net benchmarks | `janelia_cosem/benchamark/2dtraining.py`, `janelia_cosem/benchamark/3dtraining.py` | several hours to overnight depending on 2D or 3D configuration |
+| Experiment | Maintained entry point | Typical scale |
+| ---------- | ---------------------- | ------------- |
+| Quick prediction on one small volume | `janelia_cosem/test_prediction.py` | tens of minutes |
+| Full iterative SparseSeg run | `janelia_cosem/iterative_bash.py` | tens of minutes to a few hours per dataset |
+| One-epoch 12-model interface check | `janelia_cosem/benchmark_pipeline/run_benchmark_pipeline.py` | model- and environment-dependent |
+| Formal 12-model x 15-case benchmark | `janelia_cosem/benchmark_pipeline/run_formal_benchmark.py` | hours to days; use a suitable GPU batch system if available |
+| Figure-only reproduction | `janelia_cosem/benchmark_pipeline/run_benchmark_pipeline.py --plots-only` | seconds to minutes; no GPU required |
 
-Benchmark scripts in the `benchmark/` folder may have different runtime and memory requirements depending on the corresponding model. In general, SparseSeg, StarDist, DeePiCt, nnU-Net, and COSEM / CellMap U-Net baselines should be run in their own recommended environments. MitoNet inference was performed through the official empanada-napari interface using the parameter settings listed in the Appendix.
-
+The released timing tables contain the measured hardware provenance. Because model families were run on different GPU types, wall-clock values are descriptive computational-cost measurements rather than hardware-normalized speed rankings.
 For large volumes or limited GPU memory, users can reduce `patch_scale`, reduce the number of iterations, or process smaller sub-volumes.
 
 ---
@@ -455,7 +312,7 @@ For large volumes or limited GPU memory, users can reduce `patch_scale`, reduce 
 - For large volumes, GPU acceleration is recommended.
 - If memory is limited, reduce `patch_scale` or process the volume in smaller regions.
 - For reproducible benchmarking, use fixed random seeds when selecting sparse ROIs.
-- Benchmark scripts for paper results are provided in the `benchmark/` folder and should be run in the corresponding software environments.
+- Paper benchmark reproduction uses `janelia_cosem/benchmark_pipeline/`; install each model family in the separate environment documented there.
 - MitoNet results should be reproduced using the official empanada-napari implementation and the Appendix parameter settings.
 
 ---

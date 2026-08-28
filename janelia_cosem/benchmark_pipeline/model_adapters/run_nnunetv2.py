@@ -16,8 +16,17 @@ def executable(name: str) -> Path:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     add_standard_arguments(parser)
-    parser.add_argument("--code-root", type=Path, required=True,
-                        help="Folder containing prepare_official_nnunetv2_data.py")
+    bundled_code = (
+        Path(__file__).resolve().parents[1]
+        / "formal_runners"
+        / "nnunetv2_official"
+    )
+    parser.add_argument(
+        "--code-root",
+        type=Path,
+        default=bundled_code,
+        help="Folder containing prepare_official_nnunetv2_data.py (bundled by default)",
+    )
     parser.add_argument("--variant", choices=("raw", "sparse_matched"), required=True)
     args = parser.parse_args()
     if args.epochs not in (1, 50):

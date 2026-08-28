@@ -19,6 +19,7 @@ from matplotlib.lines import Line2D
 
 
 HERE = Path(__file__).resolve().parent
+FONT_SIZE = 12
 ROI_NUMS = (1, 5, 10)
 MODELS = (
     "SparseSeg finetuning",
@@ -248,10 +249,10 @@ def plot_metric(
             )
     ax.set_xlim(-0.48, 2.48)
     ax.set_xticks(centers, [str(value) for value in ROI_NUMS])
-    ax.set_xlabel("Number of positive ROIs", fontsize=10, fontweight="bold")
-    ax.set_ylabel(label, fontsize=10, fontweight="bold")
-    ax.set_title(f"{panel}  {label}", loc="left", fontsize=12, fontweight="bold")
-    ax.tick_params(labelsize=8.5)
+    ax.set_xlabel("Number of positive ROIs", fontsize=FONT_SIZE, fontweight="bold")
+    ax.set_ylabel(label, fontsize=FONT_SIZE, fontweight="bold")
+    ax.set_title(f"{panel}  {label}", loc="left", fontsize=FONT_SIZE, fontweight="bold")
+    ax.tick_params(labelsize=FONT_SIZE)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.grid(axis="y", color="#D6D6D6", linewidth=0.7, alpha=0.75)
@@ -275,7 +276,7 @@ def plot_metric(
             textcoords="offset points",
             ha="right",
             va="bottom",
-            fontsize=8.2,
+            fontsize=FONT_SIZE,
             color="#333333",
         )
     else:
@@ -323,10 +324,10 @@ def plot_time(
         10 ** (math.log10(all_times.max()) + 0.14),
     )
     ax.set_ylim(-0.015, 1.045)
-    ax.set_xlabel("Average training time per epoch (min)", fontsize=10, fontweight="bold")
-    ax.set_ylabel("Relative IoU", fontsize=10, fontweight="bold")
-    ax.set_title("b  Average time/epoch", loc="left", fontsize=12, fontweight="bold")
-    ax.tick_params(labelsize=8.5)
+    ax.set_xlabel("Average training time per epoch (min)", fontsize=FONT_SIZE, fontweight="bold")
+    ax.set_ylabel("Relative IoU", fontsize=FONT_SIZE, fontweight="bold")
+    ax.set_title("b  Average time/epoch", loc="left", fontsize=FONT_SIZE, fontweight="bold")
+    ax.tick_params(labelsize=FONT_SIZE)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.grid(True, which="both", color="#D6D6D6", linewidth=0.7, alpha=0.75)
@@ -349,11 +350,11 @@ def plot_wallclock(ax: plt.Axes, seconds: dict[str, float]) -> None:
     ax.set_yscale("log")
     ax.set_ylim(minutes.min() * 0.55, minutes.max() * 1.9)
     ax.set_xticks(positions, [DISPLAY[model] for model in MODELS], rotation=52, ha="right")
-    ax.set_ylabel("End-to-end wall-clock (min, log scale)", fontsize=10, fontweight="bold")
-    ax.set_xlabel("Model", fontsize=10, fontweight="bold")
-    ax.set_title("f  End-to-end wall-clock time", loc="left", fontsize=12, fontweight="bold")
-    ax.tick_params(axis="x", labelsize=7.2)
-    ax.tick_params(axis="y", labelsize=8.5)
+    ax.set_ylabel("End-to-end wall-clock (min, log scale)", fontsize=FONT_SIZE, fontweight="bold")
+    ax.set_xlabel("Model", fontsize=FONT_SIZE, fontweight="bold")
+    ax.set_title("f  End-to-end wall-clock time", loc="left", fontsize=FONT_SIZE, fontweight="bold")
+    ax.tick_params(axis="x", labelsize=FONT_SIZE)
+    ax.tick_params(axis="y", labelsize=FONT_SIZE)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.grid(axis="y", which="both", color="#D6D6D6", linewidth=0.7, alpha=0.75)
@@ -398,8 +399,8 @@ def build(
     grouped = group_metrics(metrics)
     time_rows_add1 = [row for row in time_rows if row["model"] in FIG_ADD1_MODELS]
 
-    plt.rcParams.update({"font.family": "DejaVu Sans", "font.size": 10})
-    fig_add1, axes_add1 = plt.subplots(1, 2, figsize=(15.6, 5.8))
+    plt.rcParams.update({"font.family": "DejaVu Sans", "font.size": FONT_SIZE})
+    fig_add1, axes_add1 = plt.subplots(1, 2, figsize=(16.8, 6.8))
     plot_metric(
         axes_add1[0],
         grouped,
@@ -432,7 +433,7 @@ def build(
         textcoords="offset points",
         ha="right",
         va="bottom",
-        fontsize=8.1,
+        fontsize=FONT_SIZE,
         color=mcolors.to_hex(COLORS["MitoNet-Pretrained"]),
     )
     plot_time(axes_add1[1], metrics, time_rows_add1, FIG_ADD1_MODELS)
@@ -442,12 +443,12 @@ def build(
         bbox_to_anchor=(0.5, 0.012),
         ncol=5,
         frameon=False,
-        fontsize=8.5,
+        fontsize=FONT_SIZE,
         handlelength=1.5,
         columnspacing=1.4,
     )
     fig_add1.subplots_adjust(
-        left=0.065, right=0.992, top=0.955, bottom=0.205, wspace=0.24
+        left=0.075, right=0.992, top=0.94, bottom=0.23, wspace=0.27
     )
     add1_pdf = output_dir / "Fig_add1_v3.pdf"
     save_figure(
@@ -456,7 +457,7 @@ def build(
         output_dir / "Fig_add1_v3.png" if save_png else None,
     )
 
-    fig_more, axes_more = plt.subplots(3, 2, figsize=(15.6, 13.7))
+    fig_more, axes_more = plt.subplots(3, 2, figsize=(16.8, 17.0))
     for axis, (metric, label), panel in zip(
         axes_more.flat[:5], METRICS, ("a", "b", "c", "d", "e")
     ):
@@ -476,17 +477,17 @@ def build(
         bbox_to_anchor=(0.5, 0.008),
         ncol=4,
         frameon=False,
-        fontsize=8.5,
+        fontsize=FONT_SIZE,
         handlelength=1.5,
         columnspacing=1.4,
     )
     fig_more.subplots_adjust(
-        left=0.065,
+        left=0.075,
         right=0.992,
-        top=0.975,
-        bottom=0.155,
-        hspace=0.42,
-        wspace=0.24,
+        top=0.97,
+        bottom=0.23,
+        hspace=0.5,
+        wspace=0.27,
     )
     more_pdf = output_dir / "Fig_add_more1_v3.pdf"
     save_figure(

@@ -17,7 +17,12 @@ def load_segment_cell(path: Path):
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     add_standard_arguments(parser)
-    parser.add_argument("--repo-root", type=Path, required=True)
+    parser.add_argument(
+        "--repo-root",
+        type=Path,
+        default=Path(__file__).resolve().parents[3],
+        help="Repository root containing janelia_cosem/segment_cell.py",
+    )
     parser.add_argument("--variant", choices=("finetuning", "vit"), required=True)
     parser.add_argument("--num-samples", type=int, default=32)
     parser.add_argument("--batch-size", type=int, default=4)
@@ -46,6 +51,7 @@ def main() -> None:
     )
     candidates = [
         args.repo_root / "vemmodel" / "janelia_cosem" / "segment_cell.py",
+        args.repo_root / "janelia_cosem" / "segment_cell.py",
         args.repo_root / "segment_cell.py",
     ]
     source = next((path for path in candidates if path.is_file()), None)

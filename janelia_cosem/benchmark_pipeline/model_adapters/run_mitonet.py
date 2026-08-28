@@ -8,7 +8,6 @@ from common import (add_standard_arguments, check_inputs, find_one, normalize_pr
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     add_standard_arguments(parser)
-    parser.add_argument("--repo-root", type=Path, required=True)
     parser.add_argument("--variant", choices=("pretrained", "sparse_adapted"), required=True)
     parser.add_argument("--base-config", type=Path, required=True)
     parser.add_argument("--base-model", type=Path, required=True)
@@ -17,8 +16,7 @@ def main() -> None:
     args = parser.parse_args()
     raw, _, _ = check_inputs(args)
     started = time.perf_counter()
-    nested_code = args.repo_root / "vemmodel" / "janelia_cosem" / "benchamark"
-    code = nested_code if nested_code.is_dir() else args.repo_root
+    code = Path(__file__).resolve().parents[1] / "formal_runners" / "mitonet"
     data = stage_vem_names(args.raw, args.sparse_label, args.negative_label,
                            args.work_dir / "inputdata", args.trial, args.roi_num)
     result = args.work_dir / "runner_output"

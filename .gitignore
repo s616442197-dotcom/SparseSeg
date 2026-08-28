@@ -31,3 +31,23 @@ input/
 *.Identifier
 *.obj
 /janelia_cosem/depend_install.sh
+
+# The benchmark reproduction package deliberately ships four small executable
+# examples and four compressed fixed-ROI/validity masks. Keep all other TIFFs
+# ignored so local volumes and predictions cannot be added accidentally.
+!janelia_cosem/benchmark_pipeline/example_data/raw.tif
+!janelia_cosem/benchmark_pipeline/example_data/gt.tif
+!janelia_cosem/benchmark_pipeline/example_data/sparse_label.tif
+!janelia_cosem/benchmark_pipeline/example_data/negative_label.tif
+!janelia_cosem/benchmark_pipeline/formal_assets/paired_roi_masks/masks/paired_roi_1.tif
+!janelia_cosem/benchmark_pipeline/formal_assets/paired_roi_masks/masks/paired_roi_5.tif
+!janelia_cosem/benchmark_pipeline/formal_assets/paired_roi_masks/masks/paired_roi_10.tif
+!janelia_cosem/benchmark_pipeline/formal_assets/paired_roi_masks/masks/cellmap_validity_all_voxels.tif
+
+# Historical local experiment entry points have been superseded by
+# janelia_cosem/benchmark_pipeline. They remain usable in existing worktrees,
+# but are intentionally excluded from the public repository contract.
+/janelia_cosem/benchamark/
+/janelia_cosem/test_extreme.py
+/janelia_cosem/test_ablation.py
+/janelia_cosem/README_EXTREME_BENCHMARKS.md

@@ -244,6 +244,7 @@ def main() -> None:
     if unknown_models:
         raise ValueError(f"unknown --models: {sorted(unknown_models)}")
     results: list[dict[str, object]] = []
+    planned_commands = 0
     for item in models:
         model = str(item["name"])
         if model not in selected_models:
@@ -266,6 +267,7 @@ def main() -> None:
                 device=args.device,
             )
             print(f"[{model} {row['case_id']}] {subprocess.list2cmdline(command)}", flush=True)
+            planned_commands += 1
             if args.dry_run:
                 continue
             started = time.perf_counter()
@@ -279,6 +281,10 @@ def main() -> None:
                 raise FileNotFoundError(prediction)
             results.append(metrics(model, trial, roi, prediction, gt, elapsed))
     if args.dry_run:
+        print(
+            f"expanded {planned_commands} commands "
+            f"({len(selected_models)} models x {len(rows)} cases)"
+        )
         return
     target = args.output_root / "formal_evaluation_metrics.csv"
     target.parent.mkdir(parents=True, exist_ok=True)
