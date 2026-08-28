@@ -51,7 +51,6 @@ def local_normalize_gpu(volume, window_size=20, eps=1e-6, device='cuda'):
     return normalized.cpu().numpy().astype(np.float32)
 
 
-input_dir = "/home/sbw/VEMModel/.venv/data/archive/archive/10515/data/raw_control_release"
 output_dir = "output_data"
 volume_path = os.path.join(output_dir, "raw_volume.npy")
 label_path = os.path.join(output_dir, "weak_label.npy")
