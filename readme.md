@@ -66,13 +66,21 @@ pip install torch torchvision torchaudio
 ### 4. Install required Python packages
 
 ```bash
-pip install numpy scipy pandas scikit-image tifffile matplotlib tqdm opencv-python scikit-learn
+python -m pip install numpy scipy pandas scikit-image tifffile matplotlib tqdm opencv-python scikit-learn "zarr<3"
 ```
 
-If a `requirements.txt` file is provided, the dependencies can also be installed by:
+Alternatively, install the same non-PyTorch dependencies from the tracked file:
 
 ```bash
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
+```
+
+For a fully pinned Linux/CUDA environment matching the archived SparseSeg setup,
+use the portable conda specification (the environment name is `vem_env`):
+
+```bash
+conda env create -f MUnet_env.yml
+conda activate vem_env
 ```
 
 ---
@@ -87,10 +95,10 @@ The minimal user-data layout is:
 
 ```text
 SparseSeg/
-├── inputdata/
-│   ├── raw.tif
-│   └── sparse_positive_label.tif
 ├── janelia_cosem/
+│   ├── inputdata/
+│   │   ├── raw.tif
+│   │   └── sparse_positive_label.tif
 │   ├── segment_cell.py
 │   ├── adaptive_iterated_mask.py
 │   ├── test_prediction.py
@@ -100,6 +108,7 @@ SparseSeg/
 Then run:
 
 ```bash
+cd janelia_cosem
 python test_prediction.py
 ```
 
@@ -165,6 +174,10 @@ python run_formal_benchmark.py --data-root "$FORMAL_DATA_ROOT" --validate-only
 python run_formal_benchmark.py --data-root "$FORMAL_DATA_ROOT" --output-root formal_predictions --dry-run
 python run_formal_benchmark.py --data-root "$FORMAL_DATA_ROOT" --output-root formal_predictions
 ```
+
+The formal `--dry-run` expands all 180 commands without requiring the separate
+model environments or checkpoints. Those environment variables are required
+only when the commands are actually executed.
 
 Evaluate the formal prediction layout with the tracked evaluator:
 
@@ -295,7 +308,7 @@ For benchmark and ablation scripts, the output folder may additionally contain q
 
 ## Compute Requirements
 
-The experiments reported in the paper were performed on a workstation with the following configuration:
+The original SparseSeg development and main experiments were performed on a workstation with the following configuration:
 
 | Component | Configuration |
 | --------- | ------------- |

@@ -54,10 +54,11 @@ SCHEDULE = {
 }
 
 
-def expand(value: object) -> str:
+def expand(value: object, *, allow_unresolved: bool = False) -> str:
     raw = str(value)
     expanded = os.path.expandvars(os.path.expanduser(raw))
-    if "${" in expanded or ("%" in expanded and expanded.count("%") >= 2):
+    unresolved = "${" in expanded or ("%" in expanded and expanded.count("%") >= 2)
+    if unresolved and not allow_unresolved:
         raise RuntimeError(f"unresolved environment variable: {raw}")
     return expanded
 
@@ -113,17 +114,20 @@ def build_command(
     roi: int,
     seed: int,
     device: str | None,
+    dry_run: bool = False,
 ) -> list[str]:
     name = str(item["name"])
     schedule = SCHEDULE[name]
-    interpreter = Path(expand(item["python"]))
+    interpreter = Path(expand(item["python"], allow_unresolved=dry_run))
     adapter = ROOT / str(item["adapter"])
-    if not interpreter.is_file():
+    if not dry_run and not interpreter.is_file():
         raise FileNotFoundError(f"{name} interpreter not found: {interpreter}")
     if not adapter.is_file():
         raise FileNotFoundError(adapter)
     command = [str(interpreter), str(adapter)]
-    command.extend(expand(value) for value in item.get("args", []))
+    command.extend(
+        expand(value, allow_unresolved=dry_run) for value in item.get("args", [])
+    )
     command.extend(
         [
             "--raw", str(raw),
@@ -278,7 +282,8 @@ def main() -> None:
             trial, roi = int(row["trial"]), int(row["roi_num"])
             prediction = output_path(args.output_root, model, trial, roi)
             work = args.output_root / "work" / slug(model) / row["case_id"]
-            prediction.parent.mkdir(parents=True, exist_ok=True)
+            if not args.dry_run:
+                prediction.parent.mkdir(parents=True, exist_ok=True)
             command = build_command(
                 item,
                 raw=raw,
@@ -290,6 +295,7 @@ def main() -> None:
                 roi=roi,
                 seed=int(row["training_seed"]),
                 device=args.device,
+                dry_run=args.dry_run,
             )
             print(f"[{model} {row['case_id']}] {subprocess.list2cmdline(command)}", flush=True)
             planned_commands += 1

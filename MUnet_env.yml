@@ -206,4 +206,3 @@ dependencies:
       - wrapt==1.17.3
       - yarl==1.22.0
       - zarr==2.18.3
-prefix: /home/sbw/miniconda3/envs/vem_env

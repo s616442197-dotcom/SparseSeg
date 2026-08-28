@@ -188,6 +188,10 @@ python run_formal_benchmark.py --data-root "$FORMAL_DATA_ROOT" --output-root for
 python run_formal_benchmark.py --data-root "$FORMAL_DATA_ROOT" --output-root formal_predictions
 ```
 
+The `--dry-run` command expands all 180 model/case commands without requiring the
+model-specific environment variables or external checkpoints. Actual execution
+still requires the interpreters and external assets listed above.
+
 `--models` and `--cases` select subsets. `--overwrite` is required to replace an existing prediction. Formal schedules, seeds and paired masks are fixed by the tracked runner and manifest.
 
 Evaluate the completed formal layout:
