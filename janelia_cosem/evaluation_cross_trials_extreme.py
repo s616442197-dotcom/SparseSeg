@@ -151,7 +151,7 @@ def build_model_specs() -> List[ModelSpec]:
             {},
         ),
         ModelSpec(
-            "MitoNet-Sparse-Finetuned",
+            "MitoNet sparse-adapted",
             (
                 "{empanda}/mitonet_benchmark/{trial}_{roi}/masks/raw.tiff",
                 "{empanda}/mitonet/result/{trial}_{roi}/masks/raw.tiff",

@@ -24,7 +24,7 @@ SCHEDULE = {
     "SparseSeg": {"epochs": 60, "iterations": 3},
     "SparseSeg-ViT": {"epochs": 50, "iterations": 5},
     "StarDist": {"epochs": 50, "iterations": 1, "extra": ["--steps-per-epoch", "100"]},
-    "MitoNet-Sparse-Finetuned": {"epochs": 8, "iterations": 1, "seed": 1337},
+    "MitoNet sparse-adapted": {"epochs": 8, "iterations": 1, "seed": 1337},
     "MitoNet-Pretrained": {"epochs": 1, "iterations": 1, "seed": 1337},
     "DeePict": {"epochs": 25, "iterations": 1, "seed": 12345},
     "COSEM-2D-UNet": {
@@ -89,7 +89,7 @@ def output_path(root: Path, model: str, trial: int, roi: int) -> Path:
         "SparseSeg": root / "response" / "sparseseg_adaptive_iterated_v735" / case / stem,
         "SparseSeg-ViT": root / "sparseseg_vit" / case / stem,
         "StarDist": root / "stardist" / stem,
-        "MitoNet-Sparse-Finetuned": root / "mitonet_benchmark" / case / "masks" / "raw.tiff",
+        "MitoNet sparse-adapted": root / "mitonet_benchmark" / case / "masks" / "raw.tiff",
         "MitoNet-Pretrained": root / "response" / "mitonet_pretrained" / "masks" / "raw.tiff",
         "DeePict": root / "data" / "deepict_finetune" / "tif_predictions" / f"deepict_hela2_mito_{case}_whole_volume.tif",
         "COSEM-2D-UNet": root / "data" / "cellmap_official_2d_tif_predictions" / f"cellmap_2d_unet_hela2_mito_{case}_whole_volume.tif",

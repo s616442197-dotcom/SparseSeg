@@ -3,7 +3,7 @@
 "COSEM-3D-UNet","151.175113","mean across 15 fixed-mask cases; starts after raw/sparse/negative TIFF reads and includes model import/setup, normalization, 100-epoch training, whole-volume inference, prediction TIFF write, and checkpoint save; scheduler queue excluded","measured","100"
 "DeePict","180.000000","end-to-end wall-clock lower bound set to the reported total training time (25 epochs); inference and export were not separately timestamped","end_to_end_lower_bound","25"
 "MitoNet-Pretrained","22.883077","pretrained whole-volume inference plus prediction output; no training","measured",""
-"MitoNet-Sparse-Finetuned","83.758882","raw/label read + dataset materialization + 8-epoch sparse adaptation + whole-volume inference + prediction output; environment/checkpoint setup excluded","measured",""
+"MitoNet sparse-adapted","83.758882","raw/label read + dataset materialization + 8-epoch sparse adaptation + whole-volume inference + prediction output; environment/checkpoint setup excluded","measured",""
 "SparseSeg","3453.270622","one trial-100/ROI-1 run; sum of iterations 0-2, each including training, post-training whole-volume inference, iterative-mask generation when applicable, label update, and output writes; scheduler queue gaps excluded","measured","180"
 "SparseSeg-ViT","1764.162805","five-iteration train/predict/refine/output run; mean across 15 cases; queue excluded","measured",""
 "StarDist","2211.257143","end-to-end wall-clock lower bound set to the reported total training time (50 epochs); inference and export were not separately timestamped","end_to_end_lower_bound","50"

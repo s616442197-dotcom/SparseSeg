@@ -1,13 +1,16 @@
 """Run the official DeePiCt 2D-CNN deploy_local workflow in an isolated copy."""
 from __future__ import annotations
-import argparse, csv, math, shutil, time
+import argparse, csv, json, math, shutil, subprocess, time
 from pathlib import Path
 from common import add_standard_arguments, check_inputs, normalize_prediction, run, write_timing
+
+ASSET_MANIFEST = Path(__file__).resolve().parents[1] / "formal_assets" / "external_assets.json"
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     add_standard_arguments(parser)
     parser.add_argument("--deepict-root", type=Path, required=True)
+    parser.add_argument("--deepict-commit")
     parser.add_argument("--bash", default="bash")
     args = parser.parse_args()
     raw, sparse, _ = check_inputs(args)
@@ -82,6 +85,18 @@ def main() -> None:
                             "formal_metrics_source": "packaged 15-case CSV"})
         return
 
+    deepict_spec = json.loads(ASSET_MANIFEST.read_text(encoding="utf-8"))["deepict"]
+    expected_commit = args.deepict_commit or deepict_spec["commit"]
+    completed = subprocess.run(
+        ["git", "-C", str(args.deepict_root), "rev-parse", "HEAD"],
+        check=True, capture_output=True, text=True,
+    )
+    actual_commit = completed.stdout.strip()
+    if actual_commit != expected_commit:
+        raise ValueError(
+            f"DeePiCt checkout commit mismatch: {actual_commit} != {expected_commit}"
+        )
+
     local = args.work_dir / f"2d_cnn_{time.time_ns()}"
     shutil.copytree(source, local)
     data_dir = args.work_dir / "data"; data_dir.mkdir(parents=True, exist_ok=True)
@@ -132,7 +147,8 @@ def main() -> None:
     temp = args.work_dir / "prediction.tif"
     tifffile.imwrite(temp, prediction.astype(np.float32), compression="zlib")
     normalize_prediction(temp, args.output, raw.shape, threshold=0.5)
-    write_timing(args.output, model="deepict", started=started, epochs=args.epochs)
+    write_timing(args.output, model="deepict", started=started, epochs=args.epochs,
+                 extra={"deepict_commit": actual_commit})
 
 if __name__ == "__main__":
     main()

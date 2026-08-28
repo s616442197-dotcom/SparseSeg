@@ -7,7 +7,7 @@ The root `requirements.txt` is intentionally only the lightweight plotting/orche
 - `empanada_pip_freeze.txt`: MitoNet/Empanada environment.
 - `stardist_pip_freeze.txt`: legacy StarDist environment (`stardist==0.9.1`, `tensorflow==2.16.2`, `numpy==1.26.4`).
 - `deepict_pip_freeze.txt`: legacy DeePiCt environment (`tensorflow-gpu==2.0.0`, `snakemake==5.13.0`).
-- `cellmap_csc_pip_freeze.txt`: CellMap Segmentation Challenge environment; the editable CellMap package and its git-sourced dependencies retain commit identifiers in the freeze.
+- `cellmap_csc_pip_freeze.txt`: historical CellMap environment snapshot. The optional architecture package is pinned to `https://github.com/janelia-cellmap/cellmap-segmentation-challenge.git` commit `0300239cd0b4867d4bab008aa9e95161b2442d93`; the released COSEM controls use the repository-tracked explicit sampler, weighted-BCE training loop and background treatment.
 - `legacy_workstation_system.txt`: workstation kernel, GPU and driver snapshot.
 - `hardware_provenance.csv`: method-level hardware and timing scope. The formal set was not run on a single GPU model, so wall-clock values are descriptive measurements and not hardware-normalized speed rankings.
 

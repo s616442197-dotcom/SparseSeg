@@ -19,11 +19,11 @@
       "args": []
     },
     {
-      "name": "MitoNet-Sparse-Finetuned",
+      "name": "MitoNet sparse-adapted",
       "python": "${MITONET_PYTHON}",
       "adapter": "model_adapters/run_mitonet.py",
       "args": ["--variant", "sparse_adapted",
-               "--base-config", "${MITONET_BASE_CONFIG}",
+               "--base-config", "formal_assets/configs/mitonet/MitoNet_v1.yaml",
                "--finetune-template", "formal_assets/configs/mitonet/finetune_config_portable.yaml",
                "--base-model", "${MITONET_MODEL}"]
     },
@@ -32,24 +32,25 @@
       "python": "${MITONET_PYTHON}",
       "adapter": "model_adapters/run_mitonet.py",
       "args": ["--variant", "pretrained",
-               "--base-config", "${MITONET_BASE_CONFIG}",
+               "--base-config", "formal_assets/configs/mitonet/MitoNet_v1.yaml",
                "--base-model", "${MITONET_MODEL}"]
     },
     {
       "name": "DeePict",
       "python": "${DEEPICT_PYTHON}",
       "adapter": "model_adapters/run_deepict.py",
-      "args": ["--deepict-root", "${DEEPICT_ROOT}"]
+      "args": ["--deepict-root", "${DEEPICT_ROOT}",
+               "--deepict-commit", "4a9662933f7302a5402e025d14bec2205fc8ff96"]
     },
     {
       "name": "COSEM-2D-UNet",
-      "python": "${CELLMAP_PYTHON}",
+      "python": "${COSEM_UNET_PYTHON}",
       "adapter": "model_adapters/run_cosem_unet.py",
       "args": ["--dimension", "2d"]
     },
     {
       "name": "COSEM-3D-UNet",
-      "python": "${CELLMAP_PYTHON}",
+      "python": "${COSEM_UNET_PYTHON}",
       "adapter": "model_adapters/run_cosem_unet.py",
       "args": ["--dimension", "3d"]
     },

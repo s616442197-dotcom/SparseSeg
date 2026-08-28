@@ -1,4 +1,4 @@
-"""Train/predict CellMap COSEM 2D/3D U-Net, with a portable compatibility fallback."""
+"""Train/predict COSEM-architecture 2D/3D U-Net with the released explicit training loop."""
 from __future__ import annotations
 import argparse, random, time
 from pathlib import Path
@@ -66,7 +66,7 @@ def main() -> None:
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
     positives = np.argwhere(label > 0)
     if len(positives) == 0:
-        raise ValueError("COSEM compatibility training needs at least one positive voxel")
+        raise ValueError("COSEM-architecture training needs at least one positive voxel")
     xy = min(80, image.shape[1], image.shape[2])
     dz = min(16, image.shape[0])
     batch_size = args.batch_size or (8 if args.dimension == "2d" else 2)
@@ -136,13 +136,15 @@ def main() -> None:
     torch.save(model.state_dict(), args.work_dir / "model.pt")
     write_timing(args.output, model=f"cosem_{args.dimension}_unet", started=started,
                  epochs=args.epochs,
-                 extra={"compatibility_loader": "direct positive-centered patches",
+                 extra={"sampler": "direct positive-centered patches",
                         "architecture_source": architecture_source,
                         "seed": args.seed,
                         "batch_size": batch_size,
                         "steps_per_epoch": args.steps_per_epoch,
                         "inference_overlap": args.inference_overlap,
+                        "loss": "weighted BCE; pos_weight=min(100,N_negative/max(N_positive,1))",
                         "label_treatment": "unselected voxels treated as background",
+                        "ignore_mask": "none",
                         "formal_metrics_source": "fresh fixed-mask replay"})
 
 if __name__ == "__main__":

@@ -16,6 +16,8 @@ This folder is the maintained Reviewer 3 reproduction interface. It supports thr
 - `model_adapters/`: the common CLI contract for all 12 models.
 - `formal_runners/`: bundled Vanilla U-Net, MitoNet and official nnU-Net v2 bridge logic required by the adapters.
 - `formal_assets/paired_roi_masks/`: the three fixed ROI masks, validity mask, logical hashes and installer used at runtime.
+- `formal_assets/external_assets.json`: exact external URLs, revisions and SHA-256 values enforced by the adapters.
+- `formal_assets/configs/mitonet/MitoNet_v1.yaml`: archived, SHA-256-validated MitoNet base YAML.
 - `formal_assets/configs/mitonet/finetune_config_portable.yaml`: portable MitoNet runtime template.
 - `formal_assets/sparseseg_adaptive_backend/`: optimized iterative-mask backend used by formal SparseSeg.
 - `formal_assets/provenance/`: read-only source manifests, requested configs, historical result metadata, exact environment snapshots and hardware records.
@@ -82,7 +84,7 @@ python -m pip install torch torchvision --index-url https://download.pytorch.org
 python -m pip install empanada-napari==1.2.3 tifffile pyyaml
 ```
 
-Download the official MitoNet_v1 checkpoint and base YAML. Set `MITONET_PYTHON`, `MITONET_MODEL` and `MITONET_BASE_CONFIG`. The adapter uses the tracked portable finetune template. MitoNet-pretrained performs inference only. MitoNet sparse-adapted starts from the official checkpoint and uses Empanada's native objective and sampling, not the SparseSeg sparse-matched controls.
+Download the official MitoNet_v1 checkpoint from `https://zenodo.org/record/6861565/files/MitoNet_v1.pth?download=1`. Set `MITONET_PYTHON` and `MITONET_MODEL`. The adapter uses the tracked base YAML and enforces YAML SHA-256 `45702ad6977a66badd1f33151ccc5e8a8cad2f46d9e028f318a4c3236e9c3ffb` plus checkpoint SHA-256 `487d63dd1deb971a3e374785b350673ee5427e0ffcd44880bf9a54f6c2c4bf04`. MitoNet pretrained performs inference only. MitoNet sparse-adapted starts from the official checkpoint and uses Empanada's native objective and sampling, not the SparseSeg sparse-matched controls.
 
 ### StarDist
 
@@ -103,19 +105,18 @@ conda activate deepict-benchmark
 python -m pip install "snakemake==5.13.0" "keras==2.3.1" "tensorflow-gpu==2.0.0" mrcfile pyyaml tifffile numpy
 ```
 
-Set `DEEPICT_PYTHON` and `DEEPICT_ROOT`. The adapter copies the official `2d_cnn/` workflow into its per-case work directory and materializes portable paths. A modern compatibility implementation is available only for the one-epoch interface check and is not the source of formal DeePiCt values.
+Check out DeePiCt commit `4a9662933f7302a5402e025d14bec2205fc8ff96`, then set `DEEPICT_PYTHON` and `DEEPICT_ROOT`; the adapter verifies the commit before formal execution. The adapter copies the official `2d_cnn/` workflow into its per-case work directory and materializes portable paths. A modern compatibility implementation is available only for the one-epoch interface check and is not the source of formal DeePiCt values.
 
-### COSEM 2D/3D U-Net (CellMap)
+### COSEM-architecture 2D/3D U-Net with the released explicit training loop
 
 ```bash
-conda create -n cellmap-benchmark -c conda-forge python=3.11 cxx-compiler -y
-conda activate cellmap-benchmark
-git clone https://github.com/janelia-cellmap/cellmap-segmentation-challenge.git
-python -m pip install -e cellmap-segmentation-challenge
-python -m pip install tifffile
+conda create -n cosem-unet-benchmark python=3.10 -y
+conda activate cosem-unet-benchmark
+python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+python -m pip install tifffile numpy
 ```
 
-Set `CELLMAP_PYTHON`. The runtime adapter accepts only command-line inputs and a per-case work directory. Archived manifests and original run configs are retained under read-only provenance.
+Set `COSEM_UNET_PYTHON`. These controls use the released explicit training/prediction loop in `model_adapters/run_cosem_unet.py`: each patch is centered on a retained positive voxel, the objective is weighted BCE with `pos_weight=min(100,N_negative/max(N_positive,1))`, and every unselected zero-valued voxel is treated as background without an ignore mask. The optional CellMap architecture package is pinned at commit `0300239cd0b4867d4bab008aa9e95161b2442d93` for provenance in `formal_assets/external_assets.json`; the explicit training loop itself is repository-tracked.
 
 ## Environment variables
 
@@ -126,11 +127,10 @@ export VEM_PYTHON=<vem-environment-python>
 export NNUNET_PYTHON=<nnunet-environment-python>
 export MITONET_PYTHON=<mitonet-environment-python>
 export MITONET_MODEL=<MitoNet_v1-checkpoint>
-export MITONET_BASE_CONFIG=<MitoNet_v1-yaml>
 export STARDIST_PYTHON=<stardist-environment-python>
 export DEEPICT_PYTHON=<deepict-environment-python>
 export DEEPICT_ROOT=<DeePiCt-checkout>
-export CELLMAP_PYTHON=<cellmap-environment-python>
+export COSEM_UNET_PYTHON=<cosem-unet-environment-python>
 ```
 
 The same variables can be defined in a PyCharm Run Configuration. Use this `benchmark_pipeline` folder as the working directory.
