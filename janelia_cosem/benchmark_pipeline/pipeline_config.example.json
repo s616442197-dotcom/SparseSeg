@@ -4,7 +4,7 @@
       "name": "SparseSeg",
       "python": "${VEM_PYTHON}",
       "adapter": "model_adapters/run_sparseseg.py",
-      "args": ["--variant", "finetuning"]
+      "args": ["--variant", "sparseseg"]
     },
     {
       "name": "SparseSeg-ViT",

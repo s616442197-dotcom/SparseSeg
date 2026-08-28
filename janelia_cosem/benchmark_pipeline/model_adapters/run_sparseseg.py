@@ -23,7 +23,7 @@ def main() -> None:
         default=Path(__file__).resolve().parents[3],
         help="Repository root containing janelia_cosem/segment_cell.py",
     )
-    parser.add_argument("--variant", choices=("finetuning", "vit"), required=True)
+    parser.add_argument("--variant", choices=("sparseseg", "vit"), required=True)
     parser.add_argument("--num-samples", type=int, default=32)
     parser.add_argument("--batch-size", type=int, default=4)
     backend = Path(__file__).resolve().parents[1] / "formal_assets" / "sparseseg_adaptive_backend"
@@ -62,7 +62,7 @@ def main() -> None:
     module = load_segment_cell(source)
     run_dir = args.work_dir / "iterations"
     run_dir.mkdir(parents=True, exist_ok=True)
-    adaptive = args.variant == "finetuning" and args.iterations > 1
+    adaptive = args.variant == "sparseseg" and args.iterations > 1
     if adaptive:
         required = (args.adaptive_backend, args.continuous_selector, args.frozen_actions)
         missing = [str(item) for item in required if not item.exists()]
@@ -111,7 +111,7 @@ def main() -> None:
     normalize_prediction(prediction, args.output, raw.shape)
     write_timing(
         args.output,
-        model=f"sparseseg_{args.variant}",
+        model="sparseseg" if args.variant == "sparseseg" else "sparseseg_vit",
         started=started,
         epochs=args.epochs,
         extra={

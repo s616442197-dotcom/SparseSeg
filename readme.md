@@ -139,9 +139,27 @@ After installing the model-specific environments described in `benchmark_pipelin
 python run_benchmark_pipeline.py --epochs 1
 ```
 
-For the formal experiment, place the full raw volume, dense evaluation-only GT, and explicit-negative mask in `FORMAL_DATA_ROOT`, install the released fixed ROI masks, validate them, and expand the complete command grid:
+For the formal experiment, first download and validate the public `jrc_hela-2` raw EM and dense mitochondria GT ([DOI: 10.25378/janelia.13114211](https://doi.org/10.25378/janelia.13114211)):
 
 ```bash
+python prepare_formal_inputs.py --data-root "$FORMAL_DATA_ROOT"
+```
+
+The downloader reads `em/fibsem-uint16/s3` and `labels/mito_seg/s3` from the public Janelia COSEM N5 store, transposes them to `(Z,H,W)=(200,1500,796)`, and checks the archived compression-independent logical SHA-256 values. The exact hashes and public paths are documented in `benchmark_pipeline/README.md` and `fixed_paired_roi_masks.json`.
+
+The explicit-negative input is author-generated rather than downloaded: open the same raw stack in Fiji/ImageJ, run `../preprocessing.ijm`, draw the requested negative ROIs, and use the saved `StackC.tif` as `negative_hela2_em_s3.tif`. For exact reproduction of the paper, use the author-generated negative mask supplied with Source Data; a newly drawn mask defines a new experiment. The staging command is:
+
+```bash
+python prepare_formal_inputs.py \
+  --data-root "$FORMAL_DATA_ROOT" \
+  --negative-from /path/to/StackC.tif \
+  --require-negative
+```
+
+Then install the released fixed ROI masks, validate all inputs, and expand or execute the complete command grid:
+
+```bash
+python prepare_formal_inputs.py --data-root "$FORMAL_DATA_ROOT" --validate-only --require-negative
 python formal_assets/paired_roi_masks/install_formal_masks.py --data-root "$FORMAL_DATA_ROOT"
 python run_formal_benchmark.py --data-root "$FORMAL_DATA_ROOT" --validate-only
 python run_formal_benchmark.py --data-root "$FORMAL_DATA_ROOT" --output-root formal_predictions --dry-run

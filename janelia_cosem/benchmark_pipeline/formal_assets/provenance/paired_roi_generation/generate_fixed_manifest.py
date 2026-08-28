@@ -65,7 +65,7 @@ def main() -> None:
         )
 
     payload = {
-        "schema_version": 2,
+        "schema_version": 3,
         "experiment": "formal 5 training-seed replicates x 3 fixed ROI budgets",
         "independent_volume": "HeLa2 COSEM volume",
         "pairing_definition": (
@@ -85,6 +85,32 @@ def main() -> None:
             "dense_ground_truth_evaluation_only": "hela2_mito_s3.tif",
             "explicit_negative": "negative_hela2_em_s3.tif",
             "sparse_mask_template": "label_hela2_mito_{trial}_{roi}.tif",
+        },
+        "formal_input_provenance": {
+            "dataset": "jrc_hela-2",
+            "dataset_doi": "https://doi.org/10.25378/janelia.13114211",
+            "viewer_url": "https://openorganelle.janelia.org/datasets/jrc_hela-2",
+            "public_n5_root": "s3://janelia-cosem-datasets/jrc_hela-2/jrc_hela-2.n5",
+            "public_array_paths": {
+                "raw": "em/fibsem-uint16/s3",
+                "dense_ground_truth_evaluation_only": "labels/mito_seg/s3",
+            },
+            "public_to_tiff_transform": "transpose source axes by (1, 2, 0) to ZYX",
+            "logical_sha256_c_order": {
+                "raw": {
+                    "dtype": "uint16",
+                    "sha256": "1551fc1532e34aacba6cf7f3cf1b68bb473db1a4cdac74e668ce36e09192716a",
+                },
+                "dense_ground_truth_evaluation_only": {
+                    "dtype": "uint8",
+                    "sha256": "0f3e252e49c7a063227d0ab24d2cc5ab936f6189cedfe1a7b2d50490bf310d44",
+                },
+            },
+            "explicit_negative_provenance": {
+                "generator": "janelia_cosem/preprocessing.ijm (StackC.tif)",
+                "exact_replay": "copy the author-generated mask from the accompanying Source Data",
+                "validation": "shape is fixed; logical binary SHA-256 is printed by the formal runner",
+            },
         },
         "seed_policies": {
             "SparseSeg": "1400000 + trial*100 + roi_num + iteration_zero_based",

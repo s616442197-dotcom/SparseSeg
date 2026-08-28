@@ -1,3 +1,6 @@
 numpy>=1.24
 matplotlib>=3.7
 tifffile>=2023.7.10
+dask[array]>=2023.7
+s3fs>=2023.6
+zarr>=2.16,<3

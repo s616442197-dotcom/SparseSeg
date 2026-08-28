@@ -66,6 +66,10 @@ def slug(text: str) -> str:
     return "".join(char.lower() if char.isalnum() else "_" for char in text).strip("_")
 
 
+def logical_sha256(array) -> str:
+    return hashlib.sha256(array.tobytes(order="C")).hexdigest()
+
+
 def load_models(path: Path) -> list[dict[str, object]]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     models = payload.get("models")
@@ -213,6 +217,24 @@ def main() -> None:
     wrong_shapes = {name: shape for name, shape in shapes.items() if shape != expected_shape}
     if wrong_shapes:
         raise ValueError(f"formal TIFF shape mismatch; expected {expected_shape}: {wrong_shapes}")
+    public_inputs = manifest["formal_input_provenance"]["logical_sha256_c_order"]
+    gt_array = None
+    for contract_key, specification in public_inputs.items():
+        current = args.data_root / contract[contract_key]
+        array = np.squeeze(np.asarray(tifffile.imread(current)))
+        actual_dtype = str(array.dtype)
+        actual_hash = logical_sha256(array)
+        if actual_dtype != specification["dtype"] or actual_hash != specification["sha256"]:
+            raise ValueError(
+                f"formal public input mismatch for {current}: "
+                f"dtype={actual_dtype}, logical_sha256={actual_hash}; "
+                f"expected dtype={specification['dtype']}, "
+                f"logical_sha256={specification['sha256']}"
+            )
+        if contract_key == "dense_ground_truth_evaluation_only":
+            gt_array = array
+    negative_array = np.squeeze(np.asarray(tifffile.imread(negative)))
+    negative_hash = logical_sha256((negative_array > 0).astype(np.uint8))
     logical_mismatches = {}
     for row in rows:
         current = args.data_root / row["installed_sparse_filename"]
@@ -233,11 +255,14 @@ def main() -> None:
     if args.validate_only:
         print(
             f"validated {len(rows)} formal cases under {args.data_root}; "
-            f"shape={expected_shape}; fixed-mask hashes=OK"
+            f"shape={expected_shape}; public raw/GT hashes=OK; "
+            f"fixed-mask hashes=OK; negative logical_binary_sha256={negative_hash}"
         )
         return
 
-    gt = np.squeeze(np.asarray(tifffile.imread(gt_path))) > 0
+    if gt_array is None:
+        raise RuntimeError("dense ground truth was not validated")
+    gt = gt_array > 0
     models = load_models(args.config.resolve())
     selected_models = set(args.models or [str(item["name"]) for item in models])
     unknown_models = selected_models - {str(item["name"]) for item in models}

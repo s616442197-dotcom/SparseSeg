@@ -24,7 +24,7 @@ This folder is the maintained Reviewer 3 reproduction interface. It supports thr
 
 Three fixed ROI-selection masks (budgets 1, 5 and 10) are paired with five training seeds (trial IDs 100--104), producing 15 cases. Trial IDs are seed repeats, not independent biological volumes. The canonical contract is `formal_assets/paired_roi_masks/fixed_paired_roi_masks.json`; an identical repository-side copy is `../fixed_paired_roi_masks.json`.
 
-The installer expands the three compressed masks to the 15 exact filenames expected by the adapters. `run_formal_benchmark.py` verifies the raw, dense evaluation-only GT, explicit-negative mask, all input shapes, and every compression-independent logical mask hash before executing a model.
+The installer expands the three compressed masks to the 15 exact filenames expected by the adapters. `run_formal_benchmark.py` verifies compression-independent logical hashes for the public raw/GT arrays, checks every input shape and fixed sparse-mask hash, and reports the binary logical hash of the author-generated negative mask before executing a model.
 
 ## Runtime files versus provenance
 
@@ -147,6 +147,28 @@ Each adapter must write one binary prediction TIFF plus a `.timing.json` sidecar
 
 ## Formal 15-case reproduction
 
+The formal raw and dense mitochondria ground truth are public arrays from the Janelia COSEM `jrc_hela-2` dataset ([DOI: 10.25378/janelia.13114211](https://doi.org/10.25378/janelia.13114211); [OpenOrganelle viewer](https://openorganelle.janelia.org/datasets/jrc_hela-2)). Download the `s3` arrays, apply the archived axis transform, write the two TIFFs, and validate their compression-independent logical hashes with:
+
+```bash
+python prepare_formal_inputs.py --data-root "$FORMAL_DATA_ROOT"
+```
+
+| Output | Public N5 array | dtype | logical SHA-256 of C-order array bytes |
+| --- | --- | --- | --- |
+| `hela2_em_s3.tif` | `em/fibsem-uint16/s3` | `uint16` | `1551fc1532e34aacba6cf7f3cf1b68bb473db1a4cdac74e668ce36e09192716a` |
+| `hela2_mito_s3.tif` | `labels/mito_seg/s3` | `uint8` | `0f3e252e49c7a063227d0ab24d2cc5ab936f6189cedfe1a7b2d50490bf310d44` |
+
+`negative_hela2_em_s3.tif` is not a downloaded COSEM label. It is the author-defined background annotation created from the same raw stack with `../preprocessing.ijm`: after positive ROIs are recorded, the macro asks for negative ROIs, fills them into the zero-valued `StackC`, and saves `StackC.tif`. For the paper's exact numerical replay, copy the released `negative_hela2_em_s3.tif` from the accompanying Source Data. To create a new/custom background annotation, run the macro in Fiji/ImageJ and stage its output with:
+
+```bash
+python prepare_formal_inputs.py \
+  --data-root "$FORMAL_DATA_ROOT" \
+  --negative-from /path/to/StackC.tif \
+  --require-negative
+```
+
+The command validates the shape and prints a compression-independent binary logical hash. A newly drawn `StackC.tif` defines a new experiment; it is not expected to reproduce the paper's exact numbers.
+
 The full raw, dense evaluation-only GT and explicit-negative volume are not duplicated in Git. Place them under one directory with exact names:
 
 ```text
@@ -159,6 +181,7 @@ FORMAL_DATA_ROOT/
 All three must have shape `(200, 1500, 796)`. From this folder:
 
 ```bash
+python prepare_formal_inputs.py --data-root "$FORMAL_DATA_ROOT" --validate-only --require-negative
 python formal_assets/paired_roi_masks/install_formal_masks.py --data-root "$FORMAL_DATA_ROOT"
 python run_formal_benchmark.py --data-root "$FORMAL_DATA_ROOT" --validate-only
 python run_formal_benchmark.py --data-root "$FORMAL_DATA_ROOT" --output-root formal_predictions --dry-run
