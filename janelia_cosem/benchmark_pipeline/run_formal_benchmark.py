@@ -239,6 +239,13 @@ def main() -> None:
             gt_array = array
     negative_array = np.squeeze(np.asarray(tifffile.imread(negative)))
     negative_hash = logical_sha256((negative_array > 0).astype(np.uint8))
+    negative_spec = manifest["formal_input_provenance"]["explicit_negative_provenance"]
+    expected_negative_hash = negative_spec["logical_uint8_sha256"]
+    if negative_hash != expected_negative_hash:
+        raise ValueError(
+            f"{negative}: logical binary SHA-256 {negative_hash} != "
+            f"{expected_negative_hash}"
+        )
     logical_mismatches = {}
     for row in rows:
         current = args.data_root / row["installed_sparse_filename"]

@@ -45,8 +45,13 @@
     },
     "explicit_negative_provenance": {
       "generator": "janelia_cosem/preprocessing.ijm (StackC.tif)",
-      "preparation": "generate StackC.tif from the cited public raw stack with preprocessing.ijm",
-      "validation": "shape is fixed; logical binary SHA-256 is printed by the formal runner"
+      "asset": "formal_assets/negative_mask/negative_hela2_em_s3.tif",
+      "shape_zyx": [200, 1500, 796],
+      "foreground_voxels": 35876640,
+      "logical_uint8_sha256": "822c3b00e2e7d6f0c30e3733361057b7b00646b2c596a89ba9bd7bbf47339446",
+      "compressed_tiff_sha256": "fe229f43517a7e3cc5b14dfe779497c160a3c04d462ed2f9630602c98c51d64c",
+      "preparation": "exact author-used StackC.tif generated from the cited public raw stack with preprocessing.ijm and losslessly compressed as a binary TIFF",
+      "validation": "shape, foreground voxel count, and logical binary SHA-256 are enforced by the preparation and formal runner"
     }
   },
   "seed_policies": {

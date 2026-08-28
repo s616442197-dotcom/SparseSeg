@@ -1,5 +1,5 @@
 method_group,hardware,timing_scope,provenance
-legacy StarDist / DeePiCt,NVIDIA GeForce RTX 5080,total training time only; inference and export were not separately timestamped,legacy workstation environment archive
+legacy StarDist / DeePiCt,NVIDIA GeForce RTX 5080,end-to-end wall-clock lower bound set to total training time; inference and export were not separately timestamped,legacy workstation environment archive
 COSEM 2D U-Net,NVIDIA GeForce RTX 4090,after raw/sparse/negative TIFF reads through model import/setup; normalization; 100-epoch training; whole-volume inference; prediction TIFF and checkpoint writes; mean of 15 cases,15 per-case timing.json files from Slurm array 5283
 COSEM 3D U-Net,NVIDIA GeForce RTX 4090,after raw/sparse/negative TIFF reads through model import/setup; normalization; 100-epoch training; whole-volume inference; prediction TIFF and checkpoint writes; mean of 15 cases,15 per-case timing.json files from Slurm array 5284
 SparseSeg cases 100_1 through 102_5,NVIDIA GeForce RTX 4090,sum of iterations 0-2: training; post-training whole-volume inference; iterative-mask generation when applicable; label update and output writes; scheduler queue gaps excluded,per-case execution and timing manifests

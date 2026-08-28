@@ -155,7 +155,9 @@ def read_wallclock(path: Path) -> dict[str, float]:
     for row in rows:
         model = row["entry"]
         if model in MODELS:
-            value_text = row.get("recorded_wall_clock_seconds")
+            value_text = row.get("end_to_end_wall_clock_seconds")
+            if value_text is None:
+                value_text = row.get("recorded_wall_clock_seconds")
             if value_text is None:
                 value_text = row["mean_wall_clock_seconds"]
             value = float(value_text)
@@ -353,9 +355,9 @@ def plot_wallclock(ax: plt.Axes, seconds: dict[str, float]) -> None:
     ax.set_yscale("log")
     ax.set_ylim(minutes.min() * 0.55, minutes.max() * 1.9)
     ax.set_xticks(positions, [DISPLAY[model] for model in MODELS], rotation=52, ha="right")
-    ax.set_ylabel("Reported runtime (min, log scale)", fontsize=FONT_SIZE, fontweight="bold")
+    ax.set_ylabel("End-to-end wall-clock (min, log scale)", fontsize=FONT_SIZE, fontweight="bold")
     ax.set_xlabel("Model", fontsize=FONT_SIZE, fontweight="bold")
-    ax.set_title("f  Total recorded wall-clock time", loc="left", fontsize=FONT_SIZE, fontweight="bold")
+    ax.set_title("f  End-to-end wall-clock time", loc="left", fontsize=FONT_SIZE, fontweight="bold")
     ax.tick_params(axis="x", labelsize=FONT_SIZE)
     ax.tick_params(axis="y", labelsize=FONT_SIZE)
     ax.spines["top"].set_visible(False)

@@ -25,6 +25,10 @@ PUBLIC_INPUTS = {
     },
 }
 NEGATIVE_NAME = "negative_hela2_em_s3.tif"
+BUNDLED_NEGATIVE = Path(__file__).resolve().parent / "formal_assets" / "negative_mask" / NEGATIVE_NAME
+EXPECTED_NEGATIVE_LOGICAL_SHA256 = "822c3b00e2e7d6f0c30e3733361057b7b00646b2c596a89ba9bd7bbf47339446"
+EXPECTED_NEGATIVE_FOREGROUND_VOXELS = 35876640
+
 
 
 def logical_sha256(array) -> str:
@@ -151,18 +155,28 @@ def main() -> None:
                 raise FileExistsError(f"{negative} exists; pass --overwrite to replace it")
             shutil.copy2(source, negative)
             print(f"copied {source} -> {negative}")
+    if not negative.is_file() and args.negative_from is None and not args.validate_only:
+        if not BUNDLED_NEGATIVE.is_file():
+            raise FileNotFoundError(BUNDLED_NEGATIVE)
+        shutil.copy2(BUNDLED_NEGATIVE, negative)
+        print(f"copied bundled formal negative mask {BUNDLED_NEGATIVE} -> {negative}")
     if negative.is_file():
-        validate_negative(negative)
-    elif args.require_negative:
+        digest = validate_negative(negative)
+        if digest != EXPECTED_NEGATIVE_LOGICAL_SHA256:
+            raise ValueError(
+                f"{negative}: logical binary SHA-256 {digest} != "
+                f"{EXPECTED_NEGATIVE_LOGICAL_SHA256}"
+            )
+        foreground = int((read_tiff(negative) > 0).sum())
+        if foreground != EXPECTED_NEGATIVE_FOREGROUND_VOXELS:
+            raise ValueError(
+                f"{negative}: foreground voxels {foreground} != "
+                f"{EXPECTED_NEGATIVE_FOREGROUND_VOXELS}"
+            )
+    elif args.require_negative or args.validate_only:
         raise FileNotFoundError(
-            f"{negative} is required. Run ../preprocessing.ijm on the public raw "
-            "stack in Fiji/ImageJ and pass its StackC.tif with --negative-from."
-        )
-    else:
-        print(
-            f"{negative} is not present. Raw/GT preparation is complete. Create "
-            "StackC.tif from the public raw stack with ../preprocessing.ijm and "
-            "pass it with --negative-from."
+            f"{negative} is required; run this command without --validate-only "
+            "to install the bundled formal negative mask."
         )
 
 
