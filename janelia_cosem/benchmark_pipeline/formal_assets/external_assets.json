@@ -19,15 +19,23 @@
     "formal_interface": "official 2d_cnn/deploy_local.sh workflow"
   },
   "cosem_architecture_unet": {
-    "external_cellmap_package_required": false,
+    "display_name": "COSEM-architecture 2D/3D U-Net with the released explicit training loop",
+    "external_package_required": false,
     "adapter": "model_adapters/run_cosem_unet.py",
-    "implementation": "released explicit training and prediction loop",
+    "implementation": "repository-tracked 2D/3D U-Net architecture, training loop, prediction loop and output writer",
+    "architecture_channels": {
+      "encoder": [
+        16,
+        32
+      ],
+      "bridge": 64,
+      "decoder": [
+        32,
+        16
+      ]
+    },
     "sampler": "positive-centered patches",
     "loss": "weighted BCE with pos_weight=min(100,N_negative/max(N_positive,1))",
-    "unlabeled_treatment": "all unselected zero-valued voxels are treated as background; no ignore mask",
-    "optional_architecture_package": {
-      "repository_url": "https://github.com/janelia-cellmap/cellmap-segmentation-challenge.git",
-      "commit": "0300239cd0b4867d4bab008aa9e95161b2442d93"
-    }
+    "unlabeled_treatment": "all unselected zero-valued voxels are treated as background; no ignore mask"
   }
 }

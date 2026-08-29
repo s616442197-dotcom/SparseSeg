@@ -144,6 +144,8 @@ python run_benchmark_pipeline.py --plots-only
 
 After installing the model-specific environments described in `benchmark_pipeline/README.md`, run the packaged one-epoch interface check:
 
+The COSEM-architecture 2D/3D U-Net controls use the complete repository-tracked architecture, training, prediction and output loop in `benchmark_pipeline/model_adapters/run_cosem_unet.py`; they do not require an external CellMap package or checkpoint.
+
 ```bash
 python run_benchmark_pipeline.py --epochs 1
 ```
