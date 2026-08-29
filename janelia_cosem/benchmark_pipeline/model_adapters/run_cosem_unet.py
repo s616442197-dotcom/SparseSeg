@@ -1,8 +1,61 @@
-"""Train/predict COSEM-architecture 2D/3D U-Net with the released explicit training loop."""
+"""Train/predict the pinned official CellMap 2D/3D U-Net architectures."""
 from __future__ import annotations
-import argparse, random, time
+import argparse, json, random, time
+from importlib import metadata
 from pathlib import Path
 from common import add_standard_arguments, check_inputs, write_timing
+
+CELLMAP_DISTRIBUTION = "cellmap-segmentation-challenge"
+CELLMAP_REPOSITORY = "https://github.com/janelia-cellmap/cellmap-segmentation-challenge"
+CELLMAP_COMMIT = "0300239cd0b4867d4bab008aa9e95161b2442d93"
+CELLMAP_INSTALL_SPEC = f"git+{CELLMAP_REPOSITORY}.git@{CELLMAP_COMMIT}"
+
+
+def require_pinned_cellmap_models():
+    """Load CellMap U-Nets only when the installed distribution matches the pinned commit."""
+    install_command = f'python -m pip install \"{CELLMAP_INSTALL_SPEC}\"'
+    try:
+        distribution = metadata.distribution(CELLMAP_DISTRIBUTION)
+    except metadata.PackageNotFoundError as exc:
+        raise RuntimeError(
+            "The official CellMap package is required; the portable fallback has been removed. "
+            f"Install the pinned source with: {install_command}"
+        ) from exc
+
+    direct_url_text = distribution.read_text("direct_url.json")
+    if not direct_url_text:
+        raise RuntimeError(
+            "Cannot verify the installed CellMap source revision because direct_url.json is "
+            f"missing. Reinstall from the pinned Git commit with: {install_command}"
+        )
+    try:
+        direct_url = json.loads(direct_url_text)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            "The installed CellMap direct_url.json is invalid; reinstall the pinned package "
+            f"with: {install_command}"
+        ) from exc
+
+    vcs_info = direct_url.get("vcs_info") or {}
+    installed_commit = str(vcs_info.get("commit_id") or "").lower()
+    installed_url = str(direct_url.get("url") or "").lower().removesuffix(".git")
+    expected_url = CELLMAP_REPOSITORY.lower().removesuffix(".git")
+    if vcs_info.get("vcs") != "git" or installed_commit != CELLMAP_COMMIT or installed_url != expected_url:
+        raise RuntimeError(
+            "The installed CellMap package does not match the required official source. "
+            f"Expected {CELLMAP_REPOSITORY}@{CELLMAP_COMMIT}, got "
+            f"url={direct_url.get('url')!r}, commit={installed_commit or None!r}. "
+            f"Reinstall with: {install_command}"
+        )
+
+    try:
+        from cellmap_segmentation_challenge.models import UNet_2D, UNet_3D
+    except ImportError as exc:
+        raise RuntimeError(
+            "The pinned CellMap distribution is installed but its UNet_2D/UNet_3D models "
+            "could not be imported. Recreate the documented COSEM U-Net environment."
+        ) from exc
+    return UNet_2D, UNet_3D
 
 def crop2(array, z, y, x, size):
     return array[z, y:y+size, x:x+size]
@@ -20,40 +73,8 @@ def main() -> None:
     raw, sparse, _ = check_inputs(args)
     started = time.perf_counter()
     import numpy as np, torch, tifffile
-    try:
-        from cellmap_segmentation_challenge.models import UNet_2D, UNet_3D
-        architecture_source = "cellmap-segmentation-challenge"
-    except ImportError:
-        class PortableUNet(torch.nn.Module):
-            def __init__(self, spatial_dims):
-                super().__init__()
-                conv = torch.nn.Conv2d if spatial_dims == 2 else torch.nn.Conv3d
-                pool = torch.nn.MaxPool2d if spatial_dims == 2 else torch.nn.MaxPool3d
-                up = torch.nn.ConvTranspose2d if spatial_dims == 2 else torch.nn.ConvTranspose3d
-                def block(cin, cout):
-                    return torch.nn.Sequential(
-                        conv(cin, cout, 3, padding=1), torch.nn.ReLU(inplace=True),
-                        conv(cout, cout, 3, padding=1), torch.nn.ReLU(inplace=True),
-                    )
-                self.enc1 = block(1, 16)
-                self.enc2 = block(16, 32)
-                self.bridge = block(32, 64)
-                self.pool = pool(2)
-                self.up2 = up(64, 32, 2, stride=2)
-                self.dec2 = block(64, 32)
-                self.up1 = up(32, 16, 2, stride=2)
-                self.dec1 = block(32, 16)
-                self.head = conv(16, 1, 1)
-            def forward(self, tensor):
-                e1 = self.enc1(tensor)
-                e2 = self.enc2(self.pool(e1))
-                bridge = self.bridge(self.pool(e2))
-                d2 = self.dec2(torch.cat((self.up2(bridge), e2), dim=1))
-                d1 = self.dec1(torch.cat((self.up1(d2), e1), dim=1))
-                return self.head(d1)
-        UNet_2D = lambda _in, _out: PortableUNet(2)
-        UNet_3D = lambda _in, _out: PortableUNet(3)
-        architecture_source = "portable CellMap-compatible U-Net"
+    UNet_2D, UNet_3D = require_pinned_cellmap_models()
+    architecture_source = f"{CELLMAP_DISTRIBUTION}@{CELLMAP_COMMIT}"
     torch.manual_seed(args.seed); np.random.seed(args.seed); random.seed(args.seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(args.seed)
@@ -138,6 +159,8 @@ def main() -> None:
                  epochs=args.epochs,
                  extra={"sampler": "direct positive-centered patches",
                         "architecture_source": architecture_source,
+                        "cellmap_repository": CELLMAP_REPOSITORY,
+                        "cellmap_commit": CELLMAP_COMMIT,
                         "seed": args.seed,
                         "batch_size": batch_size,
                         "steps_per_epoch": args.steps_per_epoch,

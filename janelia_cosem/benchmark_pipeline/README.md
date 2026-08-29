@@ -110,13 +110,14 @@ Check out DeePiCt commit `4a9662933f7302a5402e025d14bec2205fc8ff96`, then set `D
 ### COSEM-architecture 2D/3D U-Net with the released explicit training loop
 
 ```bash
-conda create -n cosem-unet-benchmark python=3.10 -y
+conda create -n cosem-unet-benchmark python=3.11 -y
 conda activate cosem-unet-benchmark
 python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 python -m pip install tifffile numpy
+python -m pip install "git+https://github.com/janelia-cellmap/cellmap-segmentation-challenge.git@0300239cd0b4867d4bab008aa9e95161b2442d93"
 ```
 
-Set `COSEM_UNET_PYTHON`. These controls use the released explicit training/prediction loop in `model_adapters/run_cosem_unet.py`: each patch is centered on a retained positive voxel, the objective is weighted BCE with `pos_weight=min(100,N_negative/max(N_positive,1))`, and every unselected zero-valued voxel is treated as background without an ignore mask. The optional CellMap architecture package is pinned at commit `0300239cd0b4867d4bab008aa9e95161b2442d93` for provenance in `formal_assets/external_assets.json`; the explicit training loop itself is repository-tracked.
+Set `COSEM_UNET_PYTHON` to this environment's Python executable. These controls use the official CellMap `UNet_2D` and `UNet_3D` architectures from commit `0300239cd0b4867d4bab008aa9e95161b2442d93` together with the released explicit training/prediction loop in `model_adapters/run_cosem_unet.py`: each patch is centered on a retained positive voxel, the objective is weighted BCE with `pos_weight=min(100,N_negative/max(N_positive,1))`, and every unselected zero-valued voxel is treated as background without an ignore mask. The adapter checks the installed distribution's PEP 610 `direct_url.json` and exits unless the package URL and resolved Git commit exactly match the pinned official source. There is no portable architecture fallback.
 
 ## Environment variables
 

@@ -148,15 +148,15 @@ After installing the model-specific environments described in `benchmark_pipelin
 python run_benchmark_pipeline.py --epochs 1
 ```
 
-For the formal experiment, first download and validate the public `jrc_hela-2` raw EM and dense mitochondria GT ([DOI: 10.25378/janelia.13114211](https://doi.org/10.25378/janelia.13114211)):
+For the formal experiment, download and validate the public `jrc_hela-2` raw EM and dense mitochondria GT ([DOI: 10.25378/janelia.13114211](https://doi.org/10.25378/janelia.13114211)) and automatically install the exact author-used negative mask archived in the benchmark package:
 
 ```bash
-python prepare_formal_inputs.py --data-root "$FORMAL_DATA_ROOT"
+python prepare_formal_inputs.py --data-root "$FORMAL_DATA_ROOT" --require-negative
 ```
 
-The downloader reads `em/fibsem-uint16/s3` and `labels/mito_seg/s3` from the public Janelia COSEM N5 store, transposes them to `(Z,H,W)=(200,1500,796)`, and checks the archived compression-independent logical SHA-256 values. The exact hashes and public paths are documented in `benchmark_pipeline/README.md` and `fixed_paired_roi_masks.json`.
+The downloader reads `em/fibsem-uint16/s3` and `labels/mito_seg/s3` from the public Janelia COSEM N5 store, transposes them to `(Z,H,W)=(200,1500,796)`, and checks the archived compression-independent logical SHA-256 values. For the formal benchmark, the same preparation command installs `formal_assets/negative_mask/negative_hela2_em_s3.tif` and verifies its shape, foreground count, and logical hash. No manual Fiji/ImageJ annotation is required to reproduce the formal 15-case benchmark. The exact hashes and public paths are documented in `benchmark_pipeline/README.md` and `fixed_paired_roi_masks.json`.
 
-The explicit-negative input is generated from the same public raw stack: open it in Fiji/ImageJ, run `../preprocessing.ijm`, draw the requested negative ROIs, and use the saved `StackC.tif` as `negative_hela2_em_s3.tif`. Because the negative ROIs are an annotation choice, a newly generated mask follows the released preprocessing protocol but is not a byte-identical copy of the authors' annotation. The staging command is:
+For a new dataset or a custom SparseSeg workflow, users can instead create their own explicit-negative annotation from the raw stack with `../preprocessing.ijm`, save the resulting `StackC.tif`, and stage it as follows:
 
 ```bash
 python prepare_formal_inputs.py \
@@ -164,6 +164,8 @@ python prepare_formal_inputs.py \
   --negative-from /path/to/StackC.tif \
   --require-negative
 ```
+
+A custom mask follows the released annotation protocol but is not expected to be byte-identical to the archived formal mask; it should therefore not be substituted when reproducing the reported benchmark values.
 
 Then install the released fixed ROI masks, validate all inputs, and expand or execute the complete command grid:
 
