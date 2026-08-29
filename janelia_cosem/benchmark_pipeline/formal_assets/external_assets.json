@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "mitonet": {
+    "display_name": "MitoNet sparse-adapted",
+    "empanada_napari_version": "1.2.3",
+    "repository_url": "https://github.com/volume-em/empanada-napari",
+    "base_config": {
+      "path": "formal_assets/configs/mitonet/MitoNet_v1.yaml",
+      "sha256": "45702ad6977a66badd1f33151ccc5e8a8cad2f46d9e028f318a4c3236e9c3ffb"
+    },
+    "checkpoint": {
+      "url": "https://zenodo.org/record/6861565/files/MitoNet_v1.pth?download=1",
+      "sha256": "487d63dd1deb971a3e374785b350673ee5427e0ffcd44880bf9a54f6c2c4bf04"
+    }
+  },
+  "deepict": {
+    "repository_url": "https://github.com/ZauggGroup/DeePiCt.git",
+    "commit": "4a9662933f7302a5402e025d14bec2205fc8ff96",
+    "formal_interface": "official 2d_cnn/deploy_local.sh workflow"
+  },
+  "cosem_architecture_unet": {
+    "external_cellmap_package_required": false,
+    "adapter": "model_adapters/run_cosem_unet.py",
+    "implementation": "released explicit training and prediction loop",
+    "sampler": "positive-centered patches",
+    "loss": "weighted BCE with pos_weight=min(100,N_negative/max(N_positive,1))",
+    "unlabeled_treatment": "all unselected zero-valued voxels are treated as background; no ignore mask",
+    "optional_architecture_package": {
+      "repository_url": "https://github.com/janelia-cellmap/cellmap-segmentation-challenge.git",
+      "commit": "0300239cd0b4867d4bab008aa9e95161b2442d93"
+    }
+  }
+}
