@@ -24,6 +24,21 @@ The figure numbers above follow their order in the v3 manuscript; the TeX file
 labels are retained in parentheses where useful because some legacy PDF file
 names do not match the displayed figure number.
 
+## Supplementary figure coverage
+
+All quantitative supplementary panels have machine-readable source data:
+
+- Supplementary Fig. 3 is represented by the complete 175-row ablation table.
+- Supplementary Fig. 5 uses the complete 180-row, 12-model benchmark table and
+  the corresponding 12-row wall-clock table in `benchmark_pipeline/data/`.
+- Supplementary Tables 1 and 2 use the five-run resource-measurement table.
+
+Supplementary Fig. 1 (`figS1.pdf`) shows preprocessing and refinement examples,
+Supplementary Fig. 2 (`figS2.pdf`) shows representative SparseSeg--StarDist
+prediction comparisons, and Supplementary Fig. 4 (`Fig_add3.pdf`) shows two
+representative sparse-annotation trials. These are image/example panels rather
+than statistical plots, so they do not have separate numerical CSV tables.
+
 ## Provenance
 
 - `main_figure5/sparse_label_comparison.csv` is a lossless long-form export of
