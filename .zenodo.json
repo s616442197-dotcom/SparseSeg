@@ -1,0 +1,39 @@
+{
+  "title": "SparseSeg: Target-Conditioned Discovery Segmentation of Cryo-Volume Electron Microscopy Under Sparse Annotation",
+  "upload_type": "software",
+  "creators": [
+    {
+      "name": "Shi, Bowen",
+      "affiliation": "Zhejiang University"
+    },
+    {
+      "name": "Li, Yanjun",
+      "affiliation": "Zhejiang University"
+    },
+    {
+      "name": "Ouyang, Qi",
+      "affiliation": "Zhejiang University"
+    },
+    {
+      "name": "Zhu, Yanan",
+      "affiliation": "Zhejiang University"
+    }
+  ],
+  "description": "Source-code archive of SparseSeg, a target-conditioned segmentation framework for cryo-volume electron microscopy under sparse annotation. Includes the released analysis and benchmark scripts, environment specifications, example inputs and archived numerical benchmark tables. Based on code commit fb474ff22cf62d30376a82f166c78e64dd7a348d; this release adds citation metadata and the author-approved MIT license. Newly recomputed Figure 6b/c observations supplied with the postresponse manuscript are separate from the historical summary tables in this code snapshot.",
+  "version": "v3.0.0",
+  "access_right": "open",
+  "license": "mit",
+  "keywords": [
+    "cryo-volume electron microscopy",
+    "image segmentation",
+    "sparse annotation",
+    "SparseSeg"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/s616442197-dotcom/SparseSeg",
+      "relation": "isSupplementTo",
+      "resource_type": "software"
+    }
+  ]
+}

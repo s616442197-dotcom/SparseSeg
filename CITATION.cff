@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite this archive."
+type: software
+title: "SparseSeg: Target-Conditioned Discovery Segmentation of Cryo-Volume Electron Microscopy Under Sparse Annotation"
+authors:
+  - family-names: "Shi"
+    given-names: "Bowen"
+  - family-names: "Li"
+    given-names: "Yanjun"
+  - family-names: "Ouyang"
+    given-names: "Qi"
+  - family-names: "Zhu"
+    given-names: "Yanan"
+version: v3.0.0
+date-released: 2026-10-30
+license: MIT
+repository-code: "https://github.com/s616442197-dotcom/SparseSeg"
